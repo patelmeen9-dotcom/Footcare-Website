@@ -1,0 +1,218 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String          @id @default(uuid()) @db.Uuid
+  email        String          @unique
+  passwordHash String
+  name         String
+  role         String          @default("SUPER_ADMIN") // SUPER_ADMIN, STORE_MANAGER
+  active       Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  imports      ImportHistory[]
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+model Showroom {
+  id          String      @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String      @unique
+  address     String
+  mapsUrl     String
+  phone       String
+  email       String
+  openingTime String      // e.g. "09:00 AM"
+  closingTime String      // e.g. "09:00 PM"
+  heroImage   String
+  description String
+  active      Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  products    Product[]
+  promotions  Promotion[] // Banners or offers targeted at this store
+
+  @@map("showrooms")
+}
+
+model Brand {
+  id              String      @id @default(uuid()) @db.Uuid
+  name            String
+  slug            String      @unique
+  logo            String      // Cloudinary URL
+  banner          String      // Cloudinary URL
+  description     String
+  metaTitle       String?
+  metaDescription String?
+  active          Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  products        Product[]
+  promotions      Promotion[] // Brand-specific campaigns
+
+  @@map("brands")
+}
+
+model Category {
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String    @unique
+  description String?
+  image       String?
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  products    Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id              String         @id @default(uuid()) @db.Uuid
+  articleNumber   String         @unique
+  name            String
+  slug            String         @unique
+  brandId         String         @db.Uuid
+  categoryId      String         @db.Uuid
+  showroomId      String         @db.Uuid
+  description     String         @db.Text
+  material        String?
+  careInstructions String?
+  mrp             Decimal        @db.Decimal(10, 2)
+  discount        Decimal        @default(0) @db.Decimal(5, 2) // Stored as percentage, e.g. 20.00 for 20%
+  finalPrice      Decimal        @db.Decimal(10, 2)            // Redundant store for search optimization
+  available       Boolean        @default(true)
+  hotSelling      Boolean        @default(false)
+  hotSellingBadge String?        // "TRENDING", "BEST_SELLER", "SELLING_FAST"
+  featured        Boolean        @default(false)
+  newArrival      Boolean        @default(false)
+  seoTitle        String?
+  seoDescription  String?
+  status          String         @default("ACTIVE")            // "ACTIVE", "ARCHIVED", "DRAFT"
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  brand           Brand          @relation(fields: [brandId], references: [id])
+  category        Category       @relation(fields: [categoryId], references: [id])
+  showroom        Showroom       @relation(fields: [showroomId], references: [id])
+  colors          ProductColor[]
+  sizes           ProductSize[]
+  images          ProductImage[]
+
+  @@map("products")
+}
+
+model ProductColor {
+  id           String         @id @default(uuid()) @db.Uuid
+  productId    String         @db.Uuid
+  name         String         // e.g. "White", "Black"
+  displayOrder Int            @default(0)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  product      Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  images       ProductImage[]
+
+  @@map("product_colors")
+}
+
+model ProductSize {
+  id        String   @id @default(uuid()) @db.Uuid
+  productId String   @db.Uuid
+  value     String   // e.g. "UK 8", "L"
+  stock     Int      @default(0) // Future-ready inventory counting
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("product_sizes")
+}
+
+model ProductImage {
+  id           String       @id @default(uuid()) @db.Uuid
+  productId    String       @db.Uuid
+  colorId      String       @db.Uuid
+  url          String       // Cloudinary URL
+  displayOrder Int          @default(0)
+  altText      String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  color        ProductColor @relation(fields: [colorId], references: [id], onDelete: Cascade)
+
+  @@map("product_images")
+}
+
+model Promotion {
+  id                 String    @id @default(uuid()) @db.Uuid
+  name               String
+  slug               String    @unique
+  description        String?
+  type               String    // "SHOWROOM", "BRAND", "GLOBAL"
+  bannerImage        String    // Cloudinary URL
+  showroomId         String?   @db.Uuid
+  brandId            String?   @db.Uuid
+  discountPercentage Decimal?  @db.Decimal(5, 2)
+  startDate          DateTime
+  endDate            DateTime
+  status             String    @default("ACTIVE") // "ACTIVE", "INACTIVE", "SCHEDULED", "EXPIRED"
+  priority           Int       @default(0)
+  active             Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  showroom           Showroom? @relation(fields: [showroomId], references: [id])
+  brand              Brand?    @relation(fields: [brandId], references: [id])
+
+  @@map("promotions")
+}
+
+model ImportHistory {
+  id                   String    @id @default(uuid()) @db.Uuid
+  zipFileName          String
+  date                 DateTime  @default(now())
+  userId               String    @db.Uuid
+  status               String    // "SUCCESS", "FAILED", "UNDONE", "PENDING_APPROVAL"
+  summaryCreated       Int       @default(0)
+  summaryUpdated       Int       @default(0)
+  summaryErrors        Int       @default(0)
+  summarySkipped       Int       @default(0)
+  durationMs           Int
+  reportUrl            String?
+  rollbackWindowExpiry DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user                 User      @relation(fields: [userId], references: [id])
+
+  @@map("import_history")
+}
+
+model AuditLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  timestamp     DateTime @default(now())
+  userId        String?  @db.Uuid
+  userEmail     String?
+  action        String   // e.g. "PRODUCT_CREATE", "PROMOTION_EXPIRE"
+  entity        String   // e.g. "Product", "Promotion"
+  entityId      String?
+  previousValue Json?
+  newValue      Json?
+  ipAddress     String?
+  status        String   // "SUCCESS", "FAILED"
+  createdAt     DateTime @default(now())
+
+  user          User?    @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}

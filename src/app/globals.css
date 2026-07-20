@@ -1,0 +1,126 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #1a202c; /* Charcoal for text readability */
+  --card: #ffffff;
+  --card-foreground: #1a202c;
+  --border: #e2e8f0;
+  --primary: #2F3C8F; /* Deep Royal Blue */
+  --primary-foreground: #ffffff;
+  --secondary: #f7fafc; /* Off-White / Light Gray */
+  --secondary-foreground: #1a202c;
+  --accent: #B8D40A; /* Lime Green */
+  --accent-hover: #a3bd09; /* Slightly darker Lime Green for hover states */
+  --accent-foreground: #121212; /* Dark text for contrast on bright Lime Green */
+  --success: #10b981;
+  --success-bg: #ecfdf5;
+  --warning: #f59e0b;
+  --warning-bg: #fef3c7;
+  --error: #e11d48;
+  --error-bg: #fff1f2;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0b0f19; /* Deep navy background for rich branding */
+    --foreground: #f7fafc;
+    --card: #131926;
+    --card-foreground: #f7fafc;
+    --border: #1e293b;
+    --primary: #4c5ec8; /* Lighter blue for dark mode text/border readability */
+    --primary-foreground: #ffffff;
+    --secondary: #1e293b;
+    --secondary-foreground: #f7fafc;
+  }
+}
+
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-success: var(--success);
+  --color-success-bg: var(--success-bg);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  --color-error: var(--error);
+  --color-error-bg: var(--error-bg);
+
+  --font-heading: var(--font-inter), sans-serif;
+  --font-body: var(--font-inter), sans-serif;
+
+  --font-size-hero: 3.5rem;
+  --font-size-page-title: 2.5rem;
+  --font-size-section-title: 1.75rem;
+  --font-size-subtitle: 1.375rem;
+  --font-size-body-large: 1.125rem;
+  --font-size-body: 1rem;
+  --font-size-caption: 0.875rem;
+  --font-size-label-small: 0.75rem;
+
+  --spacing-space-1: 4px;
+  --spacing-space-2: 8px;
+  --spacing-space-3: 12px;
+  --spacing-space-4: 16px;
+  --spacing-space-6: 24px;
+  --spacing-space-8: 32px;
+  --spacing-space-12: 48px;
+  --spacing-space-16: 64px;
+  --spacing-space-24: 96px;
+  --spacing-space-32: 128px;
+
+  --radius-button: 14px;
+  --radius-input: 16px;
+  --radius-card: 20px;
+  --radius-image: 24px;
+  --radius-hero: 32px;
+
+  --shadow-soft-sm: 0 2px 8px -2px rgba(18, 18, 18, 0.04);
+  --shadow-soft-md: 0 8px 24px -4px rgba(18, 18, 18, 0.06), 0 4px 12px -2px rgba(18, 18, 18, 0.03);
+  --shadow-soft-lg: 0 20px 48px -8px rgba(18, 18, 18, 0.08), 0 8px 24px -4px rgba(18, 18, 18, 0.04);
+
+  --animate-ease-out-quint: ease-out-quint 300ms;
+  --animate-ease-in-out-standard: ease-in-out-standard 300ms;
+
+  --z-index-base: 0;
+  --z-index-dropdown: 1000;
+  --z-index-sticky: 1100;
+  --z-index-overlay: 1200;
+  --z-index-drawer: 1300;
+  --z-index-modal: 1350;
+  --z-index-toast: 1400;
+  --z-index-tooltip: 1500;
+
+  --opacity-disabled: 0.5;
+  --opacity-hover-overlay: 0.04;
+  --opacity-muted: 0.6;
+
+  --max-w-container: 1280px;
+  --padding-container-mobile: 1rem;
+  --padding-container-desktop: 2rem;
+}
+
+@utility container-custom {
+  max-width: var(--max-w-container);
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: var(--padding-container-mobile);
+  padding-right: var(--padding-container-mobile);
+  @media (min-width: 768px) {
+    padding-left: var(--padding-container-desktop);
+    padding-right: var(--padding-container-desktop);
+  }
+}
+
+body {
+  font-family: var(--font-body);
+}
