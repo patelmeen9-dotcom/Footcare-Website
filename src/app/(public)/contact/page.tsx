@@ -1,13 +1,22 @@
 "use client";
 
 import PageContainer from "@/components/layout/page-container";
-import { MOCK_SHOWROOMS } from "@/constants/mock-data";
 import { Phone, Mail, MapPin, Send } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+
+interface ContactShowroom { id: string; name: string; address: string; phone: string; mapsUrl: string; }
 
 export default function ContactPage() {
   const [formData, setFormData] = useState({ name: "", phone: "", message: "" });
   const [success, setSuccess] = useState(false);
+  const [showrooms, setShowrooms] = useState<ContactShowroom[]>([]);
+
+  useEffect(() => {
+    fetch("/api/showrooms")
+      .then((r) => r.json())
+      .then((d) => setShowrooms(d.showrooms || []))
+      .catch((e) => console.error(e));
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,7 +128,7 @@ export default function ContactPage() {
                 </div>
                 <div>
                   <p className="text-label-small font-bold uppercase text-foreground/40 leading-none">Email</p>
-                  <span className="font-semibold">info@footcarebhuj.com</span>
+                  <span className="font-semibold">footcarebhuj@gmail.com</span>
                 </div>
               </div>
 
@@ -142,39 +151,43 @@ export default function ContactPage() {
             Direct Showroom Lines
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-space-6">
-            {MOCK_SHOWROOMS.map((showroom) => (
-              <div
-                key={showroom.id}
-                className="bg-card border border-border p-space-6 rounded-card shadow-soft-sm flex flex-col justify-between"
-              >
-                <div>
-                  <h3 className="text-body font-bold text-foreground mb-1">
-                    {showroom.name}
-                  </h3>
-                  <p className="text-caption text-foreground/50 leading-relaxed mb-4">
-                    {showroom.address}
-                  </p>
+            {showrooms.length === 0 ? (
+              <p className="text-caption text-foreground/40">Loading showroom contact info...</p>
+            ) : (
+              showrooms.map((showroom) => (
+                <div
+                  key={showroom.id}
+                  className="bg-card border border-border p-space-6 rounded-card shadow-soft-sm flex flex-col justify-between"
+                >
+                  <div>
+                    <h3 className="text-body font-bold text-foreground mb-1">
+                      {showroom.name}
+                    </h3>
+                    <p className="text-caption text-foreground/50 leading-relaxed mb-4">
+                      {showroom.address}
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-space-2 border-t border-border pt-space-4 mt-auto">
+                    <a
+                      href={`tel:${showroom.phone.replace(/\s+/g, "")}`}
+                      className="flex items-center justify-center gap-1.5 bg-primary text-primary-foreground font-semibold py-2 rounded-button text-caption hover:bg-accent hover:text-accent-foreground transition-all"
+                    >
+                      <Phone className="h-3.5 w-3.5" />
+                      Call {showroom.phone}
+                    </a>
+                    <a
+                      href={showroom.mapsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-1.5 border border-border font-semibold py-2 rounded-button text-caption hover:bg-secondary transition-all"
+                    >
+                      <MapPin className="h-3.5 w-3.5" />
+                      Get Directions
+                    </a>
+                  </div>
                 </div>
-                <div className="flex flex-col gap-space-2 border-t border-border pt-space-4 mt-auto">
-                  <a
-                    href={`tel:${showroom.phone.replace(/\s+/g, "")}`}
-                    className="flex items-center justify-center gap-1.5 bg-primary text-primary-foreground font-semibold py-2 rounded-button text-caption hover:bg-accent hover:text-accent-foreground transition-all"
-                  >
-                    <Phone className="h-3.5 w-3.5" />
-                    Call {showroom.phone}
-                  </a>
-                  <a
-                    href={showroom.mapsUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-1.5 border border-border font-semibold py-2 rounded-button text-caption hover:bg-secondary transition-all"
-                  >
-                    <MapPin className="h-3.5 w-3.5" />
-                    Get Directions
-                  </a>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </PageContainer>

@@ -85,7 +85,7 @@ export const MOCK_SHOWROOMS: Showroom[] = [
     closingTime: "10:00 PM",
     heroImage: "linear-gradient(to right bottom, #1c1917, #44403c)",
     description: "An upscale shopping experience displaying premium apparel, accessories, and formal shoes for the whole family.",
-    brands: ["Asics", "Joybean"],
+    brands: ["Asics", "Joybean", "Crocs", "Leather"],
   },
 ];
 
@@ -143,6 +143,24 @@ export const MOCK_BRANDS: Brand[] = [
     banner: "linear-gradient(135deg, #f75c03 0%, #d90429 100%)",
     description: "Vibrant, trendy lifestyle fashion and kids' footwear crafted for active play and all-day wear.",
     productCount: 42,
+  },
+  {
+    id: "brand-7",
+    name: "Crocs",
+    slug: "crocs",
+    logo: "CROCS",
+    banner: "linear-gradient(135deg, #56ab2f 0%, #a8e063 100%)",
+    description: "Iconic clogs and casual footwear known for ultimate comfort and playful designs.",
+    productCount: 30,
+  },
+  {
+    id: "brand-8",
+    name: "Leather",
+    slug: "leather",
+    logo: "LEATHER",
+    banner: "linear-gradient(135deg, #8e4a23 0%, #d2691e 100%)",
+    description: "Premium handcrafted leather shoes combining classic elegance with modern durability.",
+    productCount: 25,
   },
 ];
 

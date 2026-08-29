@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { MOCK_PRODUCTS } from "@/constants/mock-data";
 
 export async function GET(
   request: Request,
@@ -65,65 +64,11 @@ export async function GET(
           });
         }
       } catch (dbError) {
-        console.warn("Database lookup failed, falling back to mock details:", dbError);
+        console.warn("Database lookup failed:", dbError);
       }
     }
 
-    // Fallback Mock Details
-    const mockProduct = MOCK_PRODUCTS.find((p) => p.slug === slug);
-    if (!mockProduct) {
-      return NextResponse.json({ error: "Product not found" }, { status: 404 });
-    }
-
-    // Identify cover image and mapped gallery images
-    const coverImg = mockProduct.images?.[0]?.url || mockProduct.coverImage || mockProduct.image || "/mock-pegasus.jpg";
-    const mappedImages = mockProduct.images && mockProduct.images.length > 0
-      ? mockProduct.images
-      : [{ filename: "cover.jpg", url: coverImg, color: "Default" }];
-
-    // Generate colorway IDs mapped to color names
-    const uniqueColors = Array.from(new Set(mappedImages.map((img) => img.color || "Default")));
-    const colors = uniqueColors.map((colorName, idx) => ({
-      id: `color-${idx}`,
-      name: colorName,
-    }));
-
-    // Build standard detail view images structure
-    const images = mappedImages.map((img, idx) => {
-      const colorObj = colors.find((c) => c.name === (img.color || "Default")) || colors[0];
-      return {
-        id: `img-${idx}`,
-        url: img.url,
-        colorId: colorObj.id,
-        color: img.color || "Default",
-        altText: `${mockProduct.name} ${img.color || "Default"} View ${idx + 1}`,
-      };
-    });
-
-    const sizes = ["UK 7", "UK 8", "UK 9", "UK 10", "UK 11"];
-
-    return NextResponse.json({
-      ...mockProduct,
-      coverImage: coverImg,
-      images,
-      imageCount: mappedImages.length,
-      description: `The ${mockProduct.name} represents a benchmark in style, performance, and everyday durability. Fabricated with breathable mesh upper, structured heel overlay support, and high-performance cushioning, it delivers ultimate walking and athletic comfort. Perfect for running tracks, daily commute, or active gym sessions.`,
-      material: "Premium Breathable Synthetic Mesh / Textured Rubber Sole",
-      careInstructions: "Wipe clean with a damp cloth. Air dry away from direct sunlight. Do not machine wash.",
-      brand: { name: mockProduct.brand, slug: mockProduct.brand.toLowerCase() },
-      category: { name: mockProduct.category, slug: mockProduct.category.toLowerCase().replace(/\s+/g, "-") },
-      showroom: {
-        name: mockProduct.showroom,
-        slug: mockProduct.showroom.toLowerCase().replace(/\s+/g, "-"),
-        address: "Jubilee Ground Road, Bhuj, Gujarat",
-        phone: "+91 98252 12345",
-        mapsUrl: `https://maps.google.com/?q=${encodeURIComponent(mockProduct.showroom)}`,
-        openingTime: "09:30 AM",
-        closingTime: "09:00 PM",
-      },
-      colors,
-      sizes,
-    });
+    return NextResponse.json({ error: "Product not found" }, { status: 404 });
   } catch (err) {
     const error = err as Error;
     return NextResponse.json({ error: error.message }, { status: 500 });

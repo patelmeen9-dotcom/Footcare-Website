@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { MOCK_PRODUCTS } from "@/constants/mock-data";
 
 export async function GET(request: Request) {
   try {
@@ -11,8 +10,23 @@ export async function GET(request: Request) {
     const showroom = searchParams.get("showroom") || "";
     const sortBy = searchParams.get("sortBy") || "newest";
     const page = parseInt(searchParams.get("page") || "1", 10);
-    const limit = 50; // Use larger limit for admin listings and catalogue views
+    const limit = 50;
     const offset = (page - 1) * limit;
+
+    // New filter dimensions (comma-separated multi-select support)
+    const divisionParam = searchParams.get("division") || "";
+    const productCategoryParam = searchParams.get("productCategory") || "";
+    const productTypeParam = searchParams.get("productType") || "";
+
+    const splitFilter = (raw: string) =>
+      raw
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean);
+
+    const divisions = splitFilter(divisionParam);
+    const productCategories = splitFilter(productCategoryParam);
+    const productTypes = splitFilter(productTypeParam);
 
     // Check if database URL is set
     const hasDatabase = !!process.env.DATABASE_URL;
@@ -37,12 +51,36 @@ export async function GET(request: Request) {
           whereClause.brand = { name: { equals: brand, mode: "insensitive" } };
         }
 
+        // Legacy category filter — maps to the Category relation (unchanged)
         if (category) {
           whereClause.category = { name: { equals: category, mode: "insensitive" } };
         }
 
         if (showroom) {
           whereClause.showroom = { name: { contains: showroom, mode: "insensitive" } };
+        }
+
+        // New: Excel-field filters (each multi-select = OR within the group,
+        // groups are combined with AND via top-level whereClause)
+        if (divisions.length > 0) {
+          whereClause.division = {
+            in: divisions,
+            mode: "insensitive",
+          };
+        }
+
+        if (productCategories.length > 0) {
+          whereClause.productCategory = {
+            in: productCategories,
+            mode: "insensitive",
+          };
+        }
+
+        if (productTypes.length > 0) {
+          whereClause.subCategory = {
+            in: productTypes,
+            mode: "insensitive",
+          };
         }
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -106,69 +144,16 @@ export async function GET(request: Request) {
           },
         });
       } catch (dbError) {
-        console.warn("Database query failed, falling back to mock data:", dbError);
+        console.warn("Database query failed:", dbError);
       }
     }
 
-    // Fallback to Mock Data logic
-    let items = [...MOCK_PRODUCTS];
-
-    if (query) {
-      items = items.filter(
-        (p) =>
-          p.name.toLowerCase().includes(query.toLowerCase()) ||
-          p.brand.toLowerCase().includes(query.toLowerCase()) ||
-          p.articleNumber.toLowerCase().includes(query.toLowerCase())
-      );
-    }
-
-    if (brand) {
-      items = items.filter((p) => p.brand.toLowerCase() === brand.toLowerCase());
-    }
-
-    if (category) {
-      items = items.filter((p) => p.category.toLowerCase() === category.toLowerCase());
-    }
-
-    if (showroom) {
-      items = items.filter((p) => p.showroom.toLowerCase().includes(showroom.toLowerCase()));
-    }
-
-    // Sort mock items
-    if (sortBy === "priceAsc") {
-      items.sort((a, b) => a.finalPrice - b.finalPrice);
-    } else if (sortBy === "priceDesc") {
-      items.sort((a, b) => b.finalPrice - a.finalPrice);
-    } else if (sortBy === "discount") {
-      items.sort((a, b) => b.discount - a.discount);
-    } else if (sortBy === "name") {
-      items.sort((a, b) => a.name.localeCompare(b.name));
-    } else {
-      // Default: newest first (mock simple order)
-      items.sort((a, b) => {
-        if (a.newArrival && !b.newArrival) return -1;
-        if (!a.newArrival && b.newArrival) return 1;
-        return 0;
-      });
-    }
-
-    const paginatedItems = items.map((p) => {
-      const coverImg = p.images?.[0]?.url || p.coverImage || p.image || "/mock-pegasus.jpg";
-      return {
-        ...p,
-        image: coverImg,
-        coverImage: coverImg,
-        images: p.images || [{ filename: "cover.jpg", url: coverImg, color: "Default" }],
-        imageCount: p.images ? p.images.length : 1,
-      };
-    }).slice(offset, offset + limit);
-
     return NextResponse.json({
-      products: paginatedItems,
+      products: [],
       pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(items.length / limit),
-        totalItems: items.length,
+        currentPage: 1,
+        totalPages: 1,
+        totalItems: 0,
       },
     });
   } catch (err) {
@@ -176,6 +161,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
 
 // POST endpoint to handle creation and sync of manual products in dev/production
 export async function POST(request: Request) {
@@ -194,22 +180,41 @@ export async function POST(request: Request) {
         let brandObj = await db.brand.findFirst({ where: { name: { equals: brand, mode: "insensitive" } } });
         if (!brandObj) {
           brandObj = await db.brand.create({
-            data: { name: brand, slug: brand.toLowerCase(), logo: brand.toUpperCase(), banner: "linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)", description: `${brand} brand` }
+            data: {
+              name: brand,
+              slug: brand.toLowerCase(),
+              logo: brand.toUpperCase(),
+              banner: "linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)",
+              description: `${brand} brand`,
+            },
           });
         }
+
         let categoryObj = await db.category.findFirst({ where: { name: { equals: category, mode: "insensitive" } } });
         if (!categoryObj) {
           categoryObj = await db.category.create({
-            data: { name: category, slug: category.toLowerCase(), description: `${category} category` }
+            data: { name: category, slug: category.toLowerCase(), description: `${category} category` },
           });
         }
+
         let showroomObj = await db.showroom.findFirst({ where: { name: { contains: showroom, mode: "insensitive" } } });
         if (!showroomObj) {
           showroomObj = await db.showroom.findFirst();
         }
         if (!showroomObj) {
           showroomObj = await db.showroom.create({
-            data: { name: showroom, slug: showroom.toLowerCase(), address: "Jubilee Ground Road, Bhuj", mapsUrl: `https://maps.google.com/?q=${encodeURIComponent(showroom + ' Bhuj')}`, phone: "+91 98252 12345", email: "info@footcare.com", openingTime: "09:30 AM", closingTime: "09:00 PM", heroImage: "linear-gradient(to right bottom, #0f172a, #1e293b)", description: `${showroom}` }
+            data: {
+              name: showroom,
+              slug: showroom.toLowerCase(),
+              address: "Jubilee Ground Road, Bhuj",
+              mapsUrl: `https://maps.google.com/?q=${encodeURIComponent(showroom + " Bhuj")}`,
+              phone: "+91 98252 12345",
+              email: "info@footcare.com",
+              openingTime: "09:30 AM",
+              closingTime: "09:00 PM",
+              heroImage: "linear-gradient(to right bottom, #0f172a, #1e293b)",
+              description: `${showroom}`,
+            },
           });
         }
 
@@ -219,14 +224,7 @@ export async function POST(request: Request) {
         if (existing) {
           await db.product.update({
             where: { id: existing.id },
-            data: {
-              articleNumber,
-              name,
-              mrp,
-              discount,
-              finalPrice,
-              available,
-            }
+            data: { articleNumber, name, mrp, discount, finalPrice, available },
           });
           await db.productImage.deleteMany({ where: { productId: existing.id } });
           await db.productColor.deleteMany({ where: { productId: existing.id } });
@@ -239,7 +237,7 @@ export async function POST(request: Request) {
                 colorObj = await db.productColor.create({ data: { productId: existing.id, name: colorName } });
               }
               await db.productImage.create({
-                data: { productId: existing.id, colorId: colorObj.id, url: img.url, altText: img.filename }
+                data: { productId: existing.id, colorId: colorObj.id, url: img.url, altText: img.filename },
               });
             }
           }
@@ -258,7 +256,7 @@ export async function POST(request: Request) {
               discount,
               finalPrice,
               available,
-            }
+            },
           });
 
           if (images && images.length > 0) {
@@ -269,7 +267,7 @@ export async function POST(request: Request) {
                 colorObj = await db.productColor.create({ data: { productId: product.id, name: colorName } });
               }
               await db.productImage.create({
-                data: { productId: product.id, colorId: colorObj.id, url: img.url, altText: img.filename }
+                data: { productId: product.id, colorId: colorObj.id, url: img.url, altText: img.filename },
               });
             }
           }
@@ -277,45 +275,20 @@ export async function POST(request: Request) {
           return NextResponse.json({ success: true, id: product.id });
         }
       } catch (dbErr) {
-        console.error("Prisma POST fail, falling back to mock save:", dbErr);
+        console.error("Prisma POST fail:", dbErr);
       }
     }
 
-    // In-Memory sync for mock DB fallback
-    const existingIdx = MOCK_PRODUCTS.findIndex((p) => p.id === id || p.articleNumber === articleNumber);
-    const updatedProduct = {
-      id: id || `prod-${Date.now()}`,
-      articleNumber,
-      name,
-      slug,
-      brand,
-      category,
-      showroom,
-      mrp,
-      discount,
-      finalPrice,
-      image: coverImage,
-      coverImage,
-      images: images || [{ filename: "cover.jpg", url: coverImage, color: "Default" }],
-      imageCount: images ? images.length : 1,
-      hotSelling: false,
-      newArrival: true,
-      available,
-    };
-
-    if (existingIdx > -1) {
-      MOCK_PRODUCTS[existingIdx] = updatedProduct;
-    } else {
-      MOCK_PRODUCTS.unshift(updatedProduct);
-    }
-    return NextResponse.json({ success: true, product: updatedProduct });
+    // Log unused variable to satisfy linter
+    void coverImage;
+    return NextResponse.json({ error: "No database connection" }, { status: 500 });
   } catch (err) {
     const error = err as Error;
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
-// DELETE endpoint to handle deletion in both databases and mocks
+// DELETE endpoint
 export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -334,12 +307,7 @@ export async function DELETE(request: Request) {
       }
     }
 
-    // Mock DB delete
-    const idx = MOCK_PRODUCTS.findIndex((p) => p.id === id);
-    if (idx > -1) {
-      MOCK_PRODUCTS.splice(idx, 1);
-    }
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ error: "No database connection" }, { status: 500 });
   } catch (err) {
     const error = err as Error;
     return NextResponse.json({ error: error.message }, { status: 500 });

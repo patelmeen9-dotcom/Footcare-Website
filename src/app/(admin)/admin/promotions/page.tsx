@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Edit, Trash2, X, Calendar, MapPin } from "lucide-react";
-import { MOCK_SHOWROOMS } from "@/constants/mock-data";
 
 interface PromotionMock {
   id: string;
@@ -17,30 +16,29 @@ interface PromotionMock {
 }
 
 export default function AdminPromotionsPage() {
-  const [promotions, setPromotions] = useState<PromotionMock[]>([
-    {
-      id: "promo-1",
-      name: "Monsoon Sports Splash",
-      type: "SHOWROOM",
-      discount: "Flat 20% OFF",
-      scope: "Nike Footwear",
-      showroom: "Footcare Kick Sports",
-      description: "Gear up with original Pegasus, Downshifter, and Air Max models at a flat 20% discount. Available in-store only.",
-      duration: "Expires: July 31, 2026",
-      active: true,
-    },
-    {
-      id: "promo-2",
-      name: "Skechers Comfort Week",
-      type: "BRAND",
-      discount: "15% OFF",
-      scope: "All Skechers Models",
-      showroom: "Foot Care Store",
-      description: "Experience absolute walking luxury. Get 15% discount on Arch Fit and Go Walk footwear models.",
-      duration: "Expires: July 28, 2026",
-      active: true,
-    },
-  ]);
+  const [promotions, setPromotions] = useState<PromotionMock[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dbShowrooms, setDbShowrooms] = useState<{ id: string; name: string }[]>([]);
+
+  // Fetch promotions on mount
+  useEffect(() => {
+    const fetchPromotions = async () => {
+      try {
+        const res = await fetch("/api/promotions");
+        if (res.ok) {
+          const data = await res.json();
+          setPromotions(data.promotions || []);
+        }
+      } catch (err) {
+        console.error("Failed to fetch promotions", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchPromotions();
+    // Fetch showrooms from DB for the dropdown
+    fetch("/api/showrooms").then((r) => r.json()).then((d) => setDbShowrooms(d.showrooms || [])).catch(() => {});
+  }, []);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editingPromotion, setEditingPromotion] = useState<PromotionMock | null>(null);
@@ -66,7 +64,7 @@ export default function AdminPromotionsPage() {
   const handleAddNewClick = () => {
     setEditingPromotion(null);
     setFormData({
-      id: `promo-${Date.now()}`,
+      id: "",
       name: "",
       type: "SHOWROOM",
       discount: "",
@@ -79,24 +77,59 @@ export default function AdminPromotionsPage() {
     setIsEditing(true);
   };
 
-  const handleDeleteClick = (id: string) => {
+  const handleDeleteClick = async (id: string) => {
     if (confirm("Are you sure you want to delete this promotion?")) {
-      setPromotions(promotions.filter((p) => p.id !== id));
+      try {
+        const res = await fetch(`/api/promotions?id=${id}`, { method: "DELETE" });
+        if (res.ok) {
+          setPromotions(promotions.filter((p) => p.id !== id));
+        }
+      } catch (err) {
+        console.error("Failed to delete", err);
+      }
     }
   };
 
-  const handleToggleActive = (id: string) => {
-    setPromotions(promotions.map((p) => (p.id === id ? { ...p, active: !p.active } : p)));
+  const handleToggleActive = async (id: string) => {
+    const p = promotions.find(p => p.id === id);
+    if (!p) return;
+    
+    try {
+      const res = await fetch("/api/promotions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...p, active: !p.active }),
+      });
+      if (res.ok) {
+        setPromotions(promotions.map((p) => (p.id === id ? { ...p, active: !p.active } : p)));
+      }
+    } catch (err) {
+      console.error("Failed to toggle", err);
+    }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingPromotion) {
-      setPromotions(promotions.map((p) => (p.id === formData.id ? { ...formData } : p)));
-    } else {
-      setPromotions([formData, ...promotions]);
+    try {
+      const res = await fetch("/api/promotions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        
+        if (editingPromotion) {
+          setPromotions(promotions.map((p) => (p.id === formData.id ? { ...formData } : p)));
+        } else {
+          setPromotions([{ ...formData, id: data.id || formData.id }, ...promotions]);
+        }
+        setIsEditing(false);
+      }
+    } catch (err) {
+      console.error("Failed to save", err);
     }
-    setIsEditing(false);
   };
 
   return (
@@ -235,11 +268,13 @@ export default function AdminPromotionsPage() {
                     value={formData.showroom}
                     onChange={(e) => setFormData({ ...formData, showroom: e.target.value })}
                   >
-                    {MOCK_SHOWROOMS.map((s) => (
-                      <option key={s.id} value={s.name}>
-                        {s.name}
-                      </option>
-                    ))}
+                    {dbShowrooms.length === 0 ? (
+                      <option value="">Loading showrooms...</option>
+                    ) : (
+                      dbShowrooms.map((s) => (
+                        <option key={s.id} value={s.name}>{s.name}</option>
+                      ))
+                    )}
                   </select>
                 </div>
               </div>

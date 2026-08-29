@@ -328,8 +328,8 @@ export default function AdminImportPage() {
           </div>
 
           <div className="flex flex-col gap-space-4 overflow-y-auto max-h-[450px]">
-            {history.map((log) => (
-              <div key={log.id} className="border-b border-border pb-4 last:border-b-0 last:pb-0 flex flex-col gap-2">
+            {history.map((log, index) => (
+              <div key={log.id ?? `log-${index}`} className="border-b border-border pb-4 last:border-b-0 last:pb-0 flex flex-col gap-2">
                 <div className="flex items-center justify-between text-caption">
                   <span className="font-bold text-foreground/80 truncate max-w-[150px]">{log.fileName}</span>
                   <span className="text-[10px] text-foreground/40 font-mono">{log.date}</span>

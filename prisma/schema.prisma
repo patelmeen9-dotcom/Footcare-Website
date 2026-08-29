@@ -96,6 +96,9 @@ model Product {
   newArrival      Boolean        @default(false)
   seoTitle        String?
   seoDescription  String?
+  division        String?
+  productCategory String?
+  subCategory     String?
   status          String         @default("ACTIVE")            // "ACTIVE", "ARCHIVED", "DRAFT"
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
@@ -106,6 +109,7 @@ model Product {
   colors          ProductColor[]
   sizes           ProductSize[]
   images          ProductImage[]
+
 
   @@map("products")
 }

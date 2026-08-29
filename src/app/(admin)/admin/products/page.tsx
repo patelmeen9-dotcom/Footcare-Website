@@ -2,11 +2,35 @@
 
 import { useState, useEffect } from "react";
 import { Plus, Search, Edit, Trash2, X, Upload } from "lucide-react";
-import { MOCK_BRANDS, MOCK_SHOWROOMS, ProductMock } from "@/constants/mock-data";
+
+interface ProductMock {
+  id: string;
+  articleNumber: string;
+  name: string;
+  slug: string;
+  brand: string;
+  category: string;
+  showroom: string;
+  mrp: number;
+  discount: number;
+  finalPrice: number;
+  image?: string;
+  hotSelling: boolean;
+  hotSellingBadge?: string;
+  newArrival: boolean;
+  available: boolean;
+}
+
+interface DbBrand { id: string; name: string; }
+interface DbShowroom { id: string; name: string; }
+interface DbCategory { id: string; name: string; }
 
 export default function AdminProductsPage() {
   const [products, setProducts] = useState<ProductMock[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dbBrands, setDbBrands] = useState<DbBrand[]>([]);
+  const [dbShowrooms, setDbShowrooms] = useState<DbShowroom[]>([]);
+  const [dbCategories, setDbCategories] = useState<DbCategory[]>([]);
 
   const fetchProducts = async () => {
     try {
@@ -26,6 +50,13 @@ export default function AdminProductsPage() {
     Promise.resolve().then(() => {
       fetchProducts();
     });
+    // Fetch brands, showrooms, and categories from DB for dropdowns
+    fetch("/api/brands").then((r) => r.json()).then((d) => setDbBrands(d.brands || [])).catch(() => {});
+    fetch("/api/showrooms").then((r) => r.json()).then((d) => setDbShowrooms(d.showrooms || [])).catch(() => {});
+    // Categories come from distinct productCategory values in existing products
+    fetch("/api/products/filter-options").then((r) => r.json()).then((d) => {
+      setDbCategories((d.productCategories || []).map((name: string, i: number) => ({ id: String(i), name })));
+    }).catch(() => {});
   }, []);
   const [searchTerm, setSearchTerm] = useState("");
   const [isEditing, setIsEditing] = useState(false);
@@ -37,9 +68,9 @@ export default function AdminProductsPage() {
     articleNumber: "",
     name: "",
     slug: "",
-    brand: "Nike",
-    category: "Running Shoes",
-    showroom: "Footcare Kick Sports",
+    brand: "",
+    category: "",
+    showroom: "",
     mrp: 0,
     discount: 0,
     hotSelling: false,
@@ -167,9 +198,9 @@ export default function AdminProductsPage() {
       articleNumber: "",
       name: "",
       slug: "",
-      brand: "Nike",
-      category: "Running Shoes",
-      showroom: "Footcare Kick Sports",
+      brand: dbBrands[0]?.name || "",
+      category: dbCategories[0]?.name || "",
+      showroom: dbShowrooms[0]?.name || "",
       mrp: 0,
       discount: 0,
       hotSelling: false,
@@ -415,7 +446,7 @@ export default function AdminProductsPage() {
                 />
               </div>
 
-              {/* Showroom */}
+              {/* Showroom — options from DB */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-label-small font-bold text-foreground/60 uppercase">Showroom Assignment</label>
                 <select
@@ -423,15 +454,17 @@ export default function AdminProductsPage() {
                   value={formData.showroom}
                   onChange={(e) => setFormData({ ...formData, showroom: e.target.value })}
                 >
-                  {MOCK_SHOWROOMS.map((s) => (
-                    <option key={s.id} value={s.name}>
-                      {s.name}
-                    </option>
-                  ))}
+                  {dbShowrooms.length === 0 ? (
+                    <option value="">Loading showrooms...</option>
+                  ) : (
+                    dbShowrooms.map((s) => (
+                      <option key={s.id} value={s.name}>{s.name}</option>
+                    ))
+                  )}
                 </select>
               </div>
 
-              {/* Brand */}
+              {/* Brand — options from DB */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-label-small font-bold text-foreground/60 uppercase">Brand</label>
                 <select
@@ -439,15 +472,17 @@ export default function AdminProductsPage() {
                   value={formData.brand}
                   onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
                 >
-                  {MOCK_BRANDS.map((b) => (
-                    <option key={b.id} value={b.name}>
-                      {b.name}
-                    </option>
-                  ))}
+                  {dbBrands.length === 0 ? (
+                    <option value="">Loading brands...</option>
+                  ) : (
+                    dbBrands.map((b) => (
+                      <option key={b.id} value={b.name}>{b.name}</option>
+                    ))
+                  )}
                 </select>
               </div>
 
-              {/* Category */}
+              {/* Category — options from distinct productCategory values in DB */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-label-small font-bold text-foreground/60 uppercase">Category</label>
                 <select
@@ -455,12 +490,13 @@ export default function AdminProductsPage() {
                   value={formData.category}
                   onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                 >
-                  <option value="Running Shoes">Running Shoes</option>
-                  <option value="Casual Shoes">Casual Shoes</option>
-                  <option value="Sports Shoes">Sports Shoes</option>
-                  <option value="Sandals">Sandals</option>
-                  <option value="Apparel">Apparel</option>
-                  <option value="Accessories">Accessories</option>
+                  {dbCategories.length === 0 ? (
+                    <option value="">No categories in DB yet</option>
+                  ) : (
+                    dbCategories.map((c) => (
+                      <option key={c.id} value={c.name}>{c.name}</option>
+                    ))
+                  )}
                 </select>
               </div>
 

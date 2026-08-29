@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useState, useEffect, Suspense } from "react";
 import PageContainer from "@/components/layout/page-container";
 import { Search, MapPin, SlidersHorizontal, ArrowUpDown, RefreshCw, X, ChevronLeft, ChevronRight } from "lucide-react";
-import { MOCK_BRANDS, MOCK_SHOWROOMS } from "@/constants/mock-data";
 
 interface Product {
   id: string;
@@ -34,53 +33,160 @@ interface Pagination {
   totalItems: number;
 }
 
+interface FilterOptions {
+  divisions: string[];
+  productCategories: string[];
+  productTypes: string[];
+}
+
+/** Toggle a value in a comma-joined selection string */
+function toggleSelection(current: string, value: string): string {
+  const set = new Set(current.split(",").map((v) => v.trim()).filter(Boolean));
+  if (set.has(value)) {
+    set.delete(value);
+  } else {
+    set.add(value);
+  }
+  return Array.from(set).join(",");
+}
+
+/** Check if a value is in a comma-joined selection string */
+function isSelected(current: string, value: string): boolean {
+  return current
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .includes(value);
+}
+
+/** Reusable filter group component */
+function FilterGroup({
+  title,
+  options,
+  selectedRaw,
+  onChange,
+}: {
+  title: string;
+  options: string[];
+  selectedRaw: string;
+  onChange: (next: string) => void;
+}) {
+  if (options.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-space-2">
+      <span className="text-label-small font-bold text-foreground/50 uppercase tracking-wider">
+        {title}
+      </span>
+      <div className="flex flex-col gap-2">
+        {options.map((opt) => (
+          <label key={opt} className="flex items-center gap-2 text-caption text-foreground/80 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="accent-primary rounded h-4 w-4"
+              checked={isSelected(selectedRaw, opt)}
+              onChange={() => onChange(toggleSelection(selectedRaw, opt))}
+            />
+            <span>{opt}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Minimal types for sidebar filter data */
+interface DbBrand { id: string; name: string; }
+interface DbShowroom { id: string; name: string; }
+
 function ProductsContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  // URL state defaults
-  const queryParam = searchParams.get("query") || "";
-  const brandParam = searchParams.get("brand") || "";
-  const categoryParam = searchParams.get("category") || "";
-  const showroomParam = searchParams.get("showroom") || "";
+  // ── URL param reads ────────────────────────────────────────────────────────
+  const queryParam       = searchParams.get("query")           || "";
+  const brandParam       = searchParams.get("brand")           || "";
+  const showroomParam    = searchParams.get("showroom")        || "";
+  // Legacy category param kept for backward-compat but not shown in sidebar UI
+  const categoryParam    = searchParams.get("category")        || "";
+  // New filter dimensions
+  const divisionParam        = searchParams.get("division")        || "";
+  const productCategoryParam = searchParams.get("productCategory") || "";
+  const productTypeParam     = searchParams.get("productType")     || "";
 
-  // Component states
-  const [products, setProducts] = useState<Product[]>([]);
-  const [pagination, setPagination] = useState<Pagination>({ currentPage: 1, totalPages: 1, totalItems: 0 });
-  const [loading, setLoading] = useState(true);
+  // ── Component state ────────────────────────────────────────────────────────
+  const [products, setProducts]       = useState<Product[]>([]);
+  const [pagination, setPagination]   = useState<Pagination>({ currentPage: 1, totalPages: 1, totalItems: 0 });
+  const [loading, setLoading]         = useState(true);
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>({ divisions: [], productCategories: [], productTypes: [] });
+  const [filterLoading, setFilterLoading] = useState(true);
+  const [dbBrands, setDbBrands]       = useState<DbBrand[]>([]);
+  const [dbShowrooms, setDbShowrooms] = useState<DbShowroom[]>([]);
 
-  const [searchVal, setSearchVal] = useState(queryParam);
-  const [selectedBrand, setSelectedBrand] = useState(brandParam);
-  const [selectedCategory, setSelectedCategory] = useState(categoryParam);
-  const [selectedShowroom, setSelectedShowroom] = useState(showroomParam);
+  const [searchVal,          setSearchVal]          = useState(queryParam);
+  const [selectedBrand,      setSelectedBrand]      = useState(brandParam);
+  const [selectedShowroom,   setSelectedShowroom]   = useState(showroomParam);
+  const [selectedDivision,       setSelectedDivision]       = useState(divisionParam);
+  const [selectedProductCategory, setSelectedProductCategory] = useState(productCategoryParam);
+  const [selectedProductType,    setSelectedProductType]    = useState(productTypeParam);
   const [sortBy, setSortBy] = useState("newest");
-  const [page, setPage] = useState(1);
+  const [page,   setPage]   = useState(1);
 
   const [showMobileFilters, setShowMobileFilters] = useState(false);
 
-  // Sync inputs with URL changes (e.g. searching from Home page)
+  // ── Fetch dynamic filter options once on mount ─────────────────────────────
+  useEffect(() => {
+    const fetchFilterOptions = async () => {
+      try {
+        const res = await fetch("/api/products/filter-options");
+        if (res.ok) {
+          const data = await res.json();
+          setFilterOptions({
+            divisions:         data.divisions         || [],
+            productCategories: data.productCategories || [],
+            productTypes:      data.productTypes      || [],
+          });
+        }
+      } catch (err) {
+        console.error("Failed to fetch filter options:", err);
+      } finally {
+        setFilterLoading(false);
+      }
+    };
+    fetchFilterOptions();
+    // Fetch DB brands and showrooms for sidebar filters
+    fetch("/api/brands").then((r) => r.json()).then((d) => setDbBrands(d.brands || [])).catch(() => {});
+    fetch("/api/showrooms").then((r) => r.json()).then((d) => setDbShowrooms(d.showrooms || [])).catch(() => {});
+  }, []);
+
+  // ── Sync state when URL changes (e.g. navigating from Home search bar) ─────
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearchVal(queryParam);
       setSelectedBrand(brandParam);
-      setSelectedCategory(categoryParam);
       setSelectedShowroom(showroomParam);
+      setSelectedDivision(divisionParam);
+      setSelectedProductCategory(productCategoryParam);
+      setSelectedProductType(productTypeParam);
       setPage(1);
     }, 0);
     return () => clearTimeout(timer);
-  }, [queryParam, brandParam, categoryParam, showroomParam]);
+  }, [queryParam, brandParam, showroomParam, divisionParam, productCategoryParam, productTypeParam]);
 
+  // ── Fetch products whenever any filter changes ─────────────────────────────
   useEffect(() => {
     const fetchProducts = async () => {
       await Promise.resolve();
       setLoading(true);
       try {
         const params = new URLSearchParams();
-        if (searchVal) params.append("query", searchVal);
-        if (selectedBrand) params.append("brand", selectedBrand);
-        if (selectedCategory) params.append("category", selectedCategory);
-        if (selectedShowroom) params.append("showroom", selectedShowroom);
-        if (sortBy) params.append("sortBy", sortBy);
+        if (searchVal)               params.append("query",           searchVal);
+        if (selectedBrand)           params.append("brand",           selectedBrand);
+        if (selectedShowroom)        params.append("showroom",        selectedShowroom);
+        if (categoryParam)           params.append("category",        categoryParam);
+        if (selectedDivision)        params.append("division",        selectedDivision);
+        if (selectedProductCategory) params.append("productCategory", selectedProductCategory);
+        if (selectedProductType)     params.append("productType",     selectedProductType);
+        if (sortBy)                  params.append("sortBy",          sortBy);
         params.append("page", String(page));
 
         const res = await fetch(`/api/products?${params.toString()}`);
@@ -95,28 +201,115 @@ function ProductsContent() {
         setLoading(false);
       }
     };
-
     fetchProducts();
-  }, [searchVal, selectedBrand, selectedCategory, selectedShowroom, sortBy, page]);
+  }, [
+    searchVal,
+    selectedBrand,
+    selectedShowroom,
+    categoryParam,
+    selectedDivision,
+    selectedProductCategory,
+    selectedProductType,
+    sortBy,
+    page,
+  ]);
 
   const handleResetFilters = () => {
     setSearchVal("");
     setSelectedBrand("");
-    setSelectedCategory("");
     setSelectedShowroom("");
+    setSelectedDivision("");
+    setSelectedProductCategory("");
+    setSelectedProductType("");
     setSortBy("newest");
     setPage(1);
     router.push("/products");
   };
 
-  const categoriesList = [
-    "Running Shoes",
-    "Casual Shoes",
-    "Sports Shoes",
-    "Sandals",
-    "Apparel",
-    "Accessories",
-  ];
+  // ── Sidebar filters JSX (shared between desktop & mobile) ─────────────────
+  const filtersContent = (
+    <div className="flex flex-col gap-space-6 flex-grow">
+      {/* Brand */}
+      <div className="flex flex-col gap-space-2">
+        <span className="text-label-small font-bold text-foreground/50 uppercase tracking-wider">Brand</span>
+        <div className="flex flex-col gap-2">
+          {dbBrands.map((b) => (
+            <label key={b.id} className="flex items-center gap-2 text-caption text-foreground/80 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="accent-primary rounded h-4 w-4"
+                checked={selectedBrand.toLowerCase() === b.name.toLowerCase()}
+                onChange={() => {
+                  setSelectedBrand(selectedBrand.toLowerCase() === b.name.toLowerCase() ? "" : b.name);
+                  setPage(1);
+                }}
+              />
+              <span>{b.name}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Showroom */}
+      <div className="flex flex-col gap-space-2">
+        <span className="text-label-small font-bold text-foreground/50 uppercase tracking-wider">Showroom</span>
+        <div className="flex flex-col gap-2">
+          {dbShowrooms.map((s) => (
+            <label key={s.id} className="flex items-center gap-2 text-caption text-foreground/80 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="accent-primary rounded h-4 w-4"
+                checked={selectedShowroom.toLowerCase() === s.name.toLowerCase()}
+                onChange={() => {
+                  setSelectedShowroom(selectedShowroom.toLowerCase() === s.name.toLowerCase() ? "" : s.name);
+                  setPage(1);
+                }}
+              />
+              <span>
+                {s.name.includes("Kick Sports")
+                  ? "Kick Sports"
+                  : s.name.includes("Store")
+                  ? "Store"
+                  : s.name.includes("Mall")
+                  ? "Mall"
+                  : s.name}
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Dynamic filter groups — Division / Product Category / Product Type */}
+      {filterLoading ? (
+        <div className="flex flex-col gap-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-4 bg-secondary/60 rounded animate-pulse w-3/4" />
+          ))}
+        </div>
+      ) : (
+        <>
+          <FilterGroup
+            title="Division"
+            options={filterOptions.divisions}
+            selectedRaw={selectedDivision}
+            onChange={(next) => { setSelectedDivision(next); setPage(1); }}
+          />
+          <FilterGroup
+            title="Product Category"
+            options={filterOptions.productCategories}
+            selectedRaw={selectedProductCategory}
+            onChange={(next) => { setSelectedProductCategory(next); setPage(1); }}
+          />
+          <FilterGroup
+            title="Product Type"
+            options={filterOptions.productTypes}
+            selectedRaw={selectedProductType}
+            onChange={(next) => { setSelectedProductType(next); setPage(1); }}
+          />
+        </>
+      )}
+    </div>
+  );
 
   return (
     <div className="flex flex-col w-full bg-background min-h-screen py-space-6 pb-24 md:pb-space-12">
@@ -127,7 +320,7 @@ function ProductsContent() {
             FootCare Catalogue
           </span>
           <h1 className="text-page-title font-bold tracking-tight text-primary">
-            Explore Footwear & Apparel
+            Explore Footwear &amp; Apparel
           </h1>
           <p className="text-body text-foreground/60 leading-relaxed">
             Browse our catalog. Check pricing and stock availability, and visit our showroom to try them on.
@@ -157,7 +350,7 @@ function ProductsContent() {
           </div>
 
           <div className="flex items-center justify-between md:justify-end gap-space-3">
-            {/* Mobile Filters Toggle Button */}
+            {/* Mobile Filters Toggle */}
             <button
               onClick={() => setShowMobileFilters(true)}
               className="flex md:hidden items-center justify-center gap-2 border border-border bg-card p-space-3 rounded-button text-caption font-semibold text-foreground hover:bg-secondary"
@@ -189,7 +382,7 @@ function ProductsContent() {
 
         {/* Main Catalogue Layout */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-space-8 items-start">
-          {/* Desktop Sidebar Filters */}
+          {/* Desktop Sidebar */}
           <aside className="hidden md:flex flex-col gap-space-6 bg-card border border-border p-space-6 rounded-card shadow-soft-sm sticky top-24">
             <div className="flex items-center justify-between border-b border-border pb-space-3">
               <h2 className="text-body font-bold text-primary tracking-tight">Filters</h2>
@@ -201,83 +394,12 @@ function ProductsContent() {
                 Reset
               </button>
             </div>
-
-            {/* Brands Filter */}
-            <div className="flex flex-col gap-space-2">
-              <span className="text-label-small font-bold text-foreground/50 uppercase tracking-wider">Brand</span>
-              <div className="flex flex-col gap-2">
-                {MOCK_BRANDS.map((b) => (
-                  <label key={b.id} className="flex items-center gap-2 text-caption text-foreground/80 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      className="accent-primary rounded h-4 w-4"
-                      checked={selectedBrand.toLowerCase() === b.name.toLowerCase()}
-                      onChange={() => {
-                        setSelectedBrand(selectedBrand.toLowerCase() === b.name.toLowerCase() ? "" : b.name);
-                        setPage(1);
-                      }}
-                    />
-                    <span>{b.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Categories Filter */}
-            <div className="flex flex-col gap-space-2">
-              <span className="text-label-small font-bold text-foreground/50 uppercase tracking-wider">Category</span>
-              <div className="flex flex-col gap-2">
-                {categoriesList.map((cat) => (
-                  <label key={cat} className="flex items-center gap-2 text-caption text-foreground/80 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      className="accent-primary rounded h-4 w-4"
-                      checked={selectedCategory.toLowerCase() === cat.toLowerCase()}
-                      onChange={() => {
-                        setSelectedCategory(selectedCategory.toLowerCase() === cat.toLowerCase() ? "" : cat);
-                        setPage(1);
-                      }}
-                    />
-                    <span>{cat}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Showrooms Filter */}
-            <div className="flex flex-col gap-space-2">
-              <span className="text-label-small font-bold text-foreground/50 uppercase tracking-wider">Showroom</span>
-              <div className="flex flex-col gap-2">
-                {MOCK_SHOWROOMS.map((s) => (
-                  <label key={s.id} className="flex items-center gap-2 text-caption text-foreground/80 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      className="accent-primary rounded h-4 w-4"
-                      checked={selectedShowroom.toLowerCase() === s.name.toLowerCase()}
-                      onChange={() => {
-                        setSelectedShowroom(selectedShowroom.toLowerCase() === s.name.toLowerCase() ? "" : s.name);
-                        setPage(1);
-                      }}
-                    />
-                    <span>
-                      {s.name.includes("Kick Sports")
-                        ? "Kick Sports"
-                        : s.name.includes("Store")
-                        ? "Store"
-                        : s.name.includes("Mall")
-                        ? "Mall"
-                        : s.name}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
+            {filtersContent}
           </aside>
 
-          {/* Product Grid Panel */}
+          {/* Product Grid */}
           <div className="md:col-span-3 flex flex-col gap-space-8">
             {loading ? (
-              // Shimmer Loading States (PRD Section 35)
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-space-6">
                 {[...Array(6)].map((_, i) => (
                   <div key={i} className="bg-card border border-border rounded-card p-space-6 flex flex-col gap-4 animate-pulse">
@@ -299,9 +421,15 @@ function ProductsContent() {
                     >
                       <div className="relative h-56 w-full bg-slate-100 flex items-center justify-center text-slate-400 select-none overflow-hidden">
                         {prod.coverImage || prod.image ? (
-                          <img src={prod.coverImage || prod.image} alt={prod.name} className="object-cover w-full h-full group-hover:scale-[1.02] transition-transform duration-500" />
+                          <img
+                            src={prod.coverImage || prod.image}
+                            alt={prod.name}
+                            className="object-cover w-full h-full group-hover:scale-[1.02] transition-transform duration-500"
+                          />
                         ) : (
-                          <span className="text-caption font-medium uppercase tracking-widest text-foreground/30">{prod.brand} Image</span>
+                          <span className="text-caption font-medium uppercase tracking-widest text-foreground/30">
+                            {prod.brand} Image
+                          </span>
                         )}
                         {prod.discount > 0 && (
                           <span className="absolute top-4 left-4 bg-accent text-accent-foreground font-bold text-label-small px-3 py-1 rounded-full">
@@ -339,18 +467,22 @@ function ProductsContent() {
                         <div className="border-t border-border pt-space-3 mt-space-2 flex items-center justify-between text-label-small text-foreground/60">
                           <span className="flex items-center gap-1">
                             <MapPin className="h-3.5 w-3.5 text-primary" />
-                            {prod.showroom.split(" ").slice(1).join(" ")}
+                            {prod.showroom.includes("Kick Sports")
+                              ? "Kick Sports"
+                              : prod.showroom.includes("Mall")
+                              ? "Mall"
+                              : prod.showroom.includes("Store")
+                              ? "Store"
+                              : prod.showroom}
                           </span>
-                          <span className="text-success font-bold uppercase">
-                            In Stock
-                          </span>
+                          <span className="text-success font-bold uppercase">In Stock</span>
                         </div>
                       </div>
                     </Link>
                   ))}
                 </div>
 
-                {/* Pagination Controls */}
+                {/* Pagination */}
                 {pagination.totalPages > 1 && (
                   <div className="flex items-center justify-center gap-2 mt-space-4">
                     <button
@@ -376,7 +508,6 @@ function ProductsContent() {
                 )}
               </>
             ) : (
-              // Empty State (PRD Section 34)
               <div className="bg-card border border-border p-space-12 rounded-card text-center flex flex-col items-center justify-center gap-space-3">
                 <span className="text-section-title font-bold text-primary">No Products Found</span>
                 <p className="text-caption text-foreground/50 max-w-xs leading-relaxed">
@@ -394,7 +525,7 @@ function ProductsContent() {
         </div>
       </PageContainer>
 
-      {/* Mobile Filters Overlay Dialog */}
+      {/* Mobile Filters Overlay */}
       {showMobileFilters && (
         <div className="fixed inset-0 z-modal bg-black/50 md:hidden flex justify-end">
           <div className="bg-card w-80 h-full flex flex-col p-space-6 shadow-soft-lg animate-fade-in relative z-20 overflow-y-auto">
@@ -405,78 +536,7 @@ function ProductsContent() {
               </button>
             </div>
 
-            <div className="flex flex-col gap-space-6 flex-grow">
-              {/* Brands Filter */}
-              <div className="flex flex-col gap-space-2">
-                <span className="text-label-small font-bold text-foreground/50 uppercase tracking-wider">Brand</span>
-                <div className="flex flex-col gap-2">
-                  {MOCK_BRANDS.map((b) => (
-                    <label key={b.id} className="flex items-center gap-2 text-caption text-foreground/80 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="accent-primary rounded h-4 w-4"
-                        checked={selectedBrand.toLowerCase() === b.name.toLowerCase()}
-                        onChange={() => {
-                          setSelectedBrand(selectedBrand.toLowerCase() === b.name.toLowerCase() ? "" : b.name);
-                          setPage(1);
-                        }}
-                      />
-                      <span>{b.name}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Categories Filter */}
-              <div className="flex flex-col gap-space-2">
-                <span className="text-label-small font-bold text-foreground/50 uppercase tracking-wider">Category</span>
-                <div className="flex flex-col gap-2">
-                  {categoriesList.map((cat) => (
-                    <label key={cat} className="flex items-center gap-2 text-caption text-foreground/80 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="accent-primary rounded h-4 w-4"
-                        checked={selectedCategory.toLowerCase() === cat.toLowerCase()}
-                        onChange={() => {
-                          setSelectedCategory(selectedCategory.toLowerCase() === cat.toLowerCase() ? "" : cat);
-                          setPage(1);
-                        }}
-                      />
-                      <span>{cat}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Showrooms Filter */}
-              <div className="flex flex-col gap-space-2">
-                <span className="text-label-small font-bold text-foreground/50 uppercase tracking-wider">Showroom</span>
-                <div className="flex flex-col gap-2">
-                  {MOCK_SHOWROOMS.map((s) => (
-                    <label key={s.id} className="flex items-center gap-2 text-caption text-foreground/80 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="accent-primary rounded h-4 w-4"
-                        checked={selectedShowroom.toLowerCase() === s.name.toLowerCase()}
-                        onChange={() => {
-                          setSelectedShowroom(selectedShowroom.toLowerCase() === s.name.toLowerCase() ? "" : s.name);
-                          setPage(1);
-                        }}
-                      />
-                      <span>
-                        {s.name.includes("Kick Sports")
-                          ? "Kick Sports"
-                          : s.name.includes("Store")
-                          ? "Store"
-                          : s.name.includes("Mall")
-                          ? "Mall"
-                          : s.name}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
+            {filtersContent}
 
             <div className="border-t border-border pt-space-4 mt-space-6 flex gap-space-2">
               <button
@@ -504,11 +564,13 @@ function ProductsContent() {
 
 export default function ProductsPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-background text-foreground/60">
-        Loading Catalogue...
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-background text-foreground/60">
+          Loading Catalogue...
+        </div>
+      }
+    >
       <ProductsContent />
     </Suspense>
   );
