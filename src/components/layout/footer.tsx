@@ -77,9 +77,9 @@ export default function Footer() {
               Privacy Policy
             </Link>
             <span>•</span>
-            <Link href="/admin/login" className="hover:text-accent transition-colors font-medium">
+            {/* <Link href="/admin/login" className="hover:text-accent transition-colors font-medium">
               Admin Portal
-            </Link>
+            </Link> */}
           </div>
         </div>
       </div>
