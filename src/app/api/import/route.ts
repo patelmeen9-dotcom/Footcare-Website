@@ -197,6 +197,8 @@ const SHOWROOM_DEFAULTS: Record<
   },
 };
 
+const MAX_IMPORT_BYTES = 100 * 1024 * 1024;
+
 export async function POST(request: Request) {
   const startTime = Date.now();
 
@@ -206,6 +208,13 @@ export async function POST(request: Request) {
 
     if (!file) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+    }
+
+    if (file.size > MAX_IMPORT_BYTES) {
+      return NextResponse.json(
+        { error: "File is too large. Maximum size is 100MB." },
+        { status: 413 }
+      );
     }
 
     if (!file.name.endsWith(".zip")) {

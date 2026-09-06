@@ -68,12 +68,23 @@ export default function AdminImportPage() {
     },
   ]);
 
+  const MAX_IMPORT_BYTES = 100 * 1024 * 1024;
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
-      setStatusMessage("");
+      const selected = e.target.files[0];
       setErrorDetails([]);
       setSuccessReport(null);
+
+      if (selected.size > MAX_IMPORT_BYTES) {
+        setFile(null);
+        setStatusMessage("File is too large. Maximum size is 100MB.");
+        e.target.value = "";
+        return;
+      }
+
+      setFile(selected);
+      setStatusMessage("");
     }
   };
 
@@ -213,7 +224,7 @@ export default function AdminImportPage() {
                   <span className="text-foreground/50">Select or drop Inventory.xlsx or package.zip</span>
                 )}
               </div>
-              <span className="text-[10px] text-foreground/40 font-mono">Max size: 10MB</span>
+              <span className="text-[10px] text-foreground/40 font-mono">Max size: 100MB</span>
             </div>
 
             <button
