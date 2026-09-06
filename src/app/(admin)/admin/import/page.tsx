@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Upload, CheckCircle2, AlertCircle, RotateCcw, Download, Loader2 } from "lucide-react";
 
 interface ImportHistory {
@@ -11,6 +11,7 @@ interface ImportHistory {
   created: number;
   updated: number;
   errors: number;
+  canRollback?: boolean;
 }
 
 export default function AdminImportPage() {
@@ -46,27 +47,32 @@ export default function AdminImportPage() {
     rollbackWindowExpiry: string;
   }
   const [successReport, setSuccessReport] = useState<ImportResult | null>(null);
+  const [history, setHistory] = useState<ImportHistory[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState("");
+  const [rollingBackId, setRollingBackId] = useState<string | null>(null);
 
-  const [history, setHistory] = useState<ImportHistory[]>([
-    {
-      id: "import-1",
-      fileName: "Footwear_Update_July.xlsx",
-      date: "2026-07-19 14:32",
-      status: "SUCCESS",
-      created: 125,
-      updated: 42,
-      errors: 0,
-    },
-    {
-      id: "import-2",
-      fileName: "Invalid_Catalog_File.xlsx",
-      date: "2026-07-18 10:15",
-      status: "FAILED",
-      created: 0,
-      updated: 0,
-      errors: 3,
-    },
-  ]);
+  const loadHistory = async () => {
+    try {
+      const res = await fetch("/api/import/history");
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.logs)) {
+        setHistory(data.logs);
+        setHistoryError("");
+      } else {
+        setHistoryError(data.error || "Could not load import logs.");
+      }
+    } catch (err) {
+      console.error("Failed to load import logs:", err);
+      setHistoryError("Could not load import logs.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadHistory();
+  }, []);
 
   const MAX_IMPORT_BYTES = 100 * 1024 * 1024;
 
@@ -111,35 +117,21 @@ export default function AdminImportPage() {
       if (res.ok && data.success) {
         setSuccessReport(data);
         setStatusMessage("Catalog parsed and updated successfully!");
-        
-        // Add to history
-        const newLog: ImportHistory = {
-          id: data.importId,
-          fileName: data.fileName,
-          date: new Date().toISOString().replace("T", " ").substring(0, 16),
-          status: "SUCCESS",
-          created: data.summary.created,
-          updated: data.summary.updated,
-          errors: 0,
-        };
-        setHistory([newLog, ...history]);
         setFile(null);
+        await loadHistory();
       } else {
         setStatusMessage(data.error || "Header validation failed.");
         if (data.errorDetails) {
           setErrorDetails(data.errorDetails);
+        } else if (data.failedArticles?.length) {
+          setErrorDetails(
+            data.failedArticles.map(
+              (item: { articleNumber: string; reason: string }) =>
+                `${item.articleNumber}: ${item.reason}`
+            )
+          );
         }
-        
-        const failLog: ImportHistory = {
-          id: `import-fail-${Date.now()}`,
-          fileName: file.name,
-          date: new Date().toISOString().replace("T", " ").substring(0, 16),
-          status: "FAILED",
-          created: 0,
-          updated: 0,
-          errors: data.errorDetails ? data.errorDetails.length : 1,
-        };
-        setHistory([failLog, ...history]);
+        await loadHistory();
       }
     } catch (err) {
       console.error("Import error:", err);
@@ -154,22 +146,26 @@ export default function AdminImportPage() {
       return;
     }
 
+    setRollingBackId(id);
     try {
       const res = await fetch("/api/import/rollback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ importId: id }),
       });
+      const data = await res.json();
 
-      if (res.ok) {
-        setHistory(
-          history.map((log) => (log.id === id ? { ...log, status: "ROLLED_BACK" as const } : log))
-        );
+      if (res.ok && data.success) {
+        await loadHistory();
         alert("Database rolled back successfully!");
+      } else {
+        alert(data.error || "Rollback operation failed.");
       }
     } catch (err) {
       console.error("Rollback error:", err);
       alert("Rollback operation failed.");
+    } finally {
+      setRollingBackId(null);
     }
   };
 
@@ -339,7 +335,16 @@ export default function AdminImportPage() {
           </div>
 
           <div className="flex flex-col gap-space-4 overflow-y-auto max-h-[450px]">
-            {history.map((log, index) => (
+            {historyLoading ? (
+              <p className="text-caption text-foreground/40">Loading import logs...</p>
+            ) : historyError ? (
+              <p className="text-caption text-red-600">{historyError}</p>
+            ) : history.length === 0 ? (
+              <p className="text-caption text-foreground/40">
+                No imports yet. Logs will appear here after you run an import.
+              </p>
+            ) : (
+              history.map((log, index) => (
               <div key={log.id ?? `log-${index}`} className="border-b border-border pb-4 last:border-b-0 last:pb-0 flex flex-col gap-2">
                 <div className="flex items-center justify-between text-caption">
                   <span className="font-bold text-foreground/80 truncate max-w-[150px]">{log.fileName}</span>
@@ -353,18 +358,27 @@ export default function AdminImportPage() {
                     {log.errors > 0 && <span className="text-red-600 font-bold">E: {log.errors}</span>}
                   </div>
 
-                  {log.status === "SUCCESS" ? (
+                  {log.canRollback ? (
                     <button
                       onClick={() => handleRollback(log.id)}
-                      className="flex items-center gap-1 text-[10px] text-red-600 font-semibold hover:underline"
+                      disabled={rollingBackId === log.id}
+                      className="flex items-center gap-1 text-[10px] text-red-600 font-semibold hover:underline disabled:opacity-50"
                     >
-                      <RotateCcw className="h-3 w-3" />
+                      {rollingBackId === log.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <RotateCcw className="h-3 w-3" />
+                      )}
                       Undo
                     </button>
                   ) : (
                     <span
                       className={`text-[10px] font-bold uppercase ${
-                        log.status === "ROLLED_BACK" ? "text-orange-600" : "text-red-600"
+                        log.status === "ROLLED_BACK"
+                          ? "text-orange-600"
+                          : log.status === "SUCCESS"
+                            ? "text-emerald-700"
+                            : "text-red-600"
                       }`}
                     >
                       {log.status}
@@ -372,7 +386,8 @@ export default function AdminImportPage() {
                   )}
                 </div>
               </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>

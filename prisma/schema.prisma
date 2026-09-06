@@ -185,8 +185,8 @@ model ImportHistory {
   id                   String    @id @default(uuid()) @db.Uuid
   zipFileName          String
   date                 DateTime  @default(now())
-  userId               String    @db.Uuid
-  status               String    // "SUCCESS", "FAILED", "UNDONE", "PENDING_APPROVAL"
+  userId               String?   @db.Uuid
+  status               String    // "SUCCESS", "FAILED", "ROLLED_BACK"
   summaryCreated       Int       @default(0)
   summaryUpdated       Int       @default(0)
   summaryErrors        Int       @default(0)
@@ -194,10 +194,12 @@ model ImportHistory {
   durationMs           Int
   reportUrl            String?
   rollbackWindowExpiry DateTime?
+  // created article numbers + pre-update snapshots of updated products
+  snapshot             Json?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  user                 User      @relation(fields: [userId], references: [id])
+  user                 User?     @relation(fields: [userId], references: [id])
 
   @@map("import_history")
 }

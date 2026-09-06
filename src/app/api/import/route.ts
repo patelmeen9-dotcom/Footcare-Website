@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { read, utils } from "xlsx";
 import JSZip from "jszip";
 import { v2 as cloudinary } from "cloudinary";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { getSession } from "@/lib/auth";
+import { serializeProductSnapshot, type ProductSnapshot } from "@/lib/import-snapshot";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -343,6 +346,7 @@ export async function POST(request: Request) {
     // ---------- 5. Save to database ----------
     const created: string[] = [];
     const updated: string[] = [];
+    const updatedSnapshots: ProductSnapshot[] = [];
     const failed: { articleNumber: string; reason: string }[] = [];
 
     for (const group of productGroups.values()) {
@@ -405,11 +409,17 @@ export async function POST(request: Request) {
         const finalPrice = Math.round(group.mrp * (1 - group.discount / 100));
         const existingProduct = await db.product.findUnique({
           where: { articleNumber: group.articleNumber },
+          include: {
+            colors: { orderBy: { displayOrder: "asc" } },
+            sizes: true,
+            images: { include: { color: true }, orderBy: { displayOrder: "asc" } },
+          },
         });
 
         let productId: string;
 
         if (existingProduct) {
+          updatedSnapshots.push(serializeProductSnapshot(existingProduct));
           await db.product.update({
             where: { articleNumber: group.articleNumber },
             data: {
@@ -510,30 +520,29 @@ export async function POST(request: Request) {
 
     // ---------- 6. Record import history ----------
     const durationMs = Date.now() - startTime;
+    const status =
+      failed.length > 0 && created.length === 0 && updated.length === 0 ? "FAILED" : "SUCCESS";
+    const rollbackWindowExpiry =
+      status === "SUCCESS" ? new Date(Date.now() + 24 * 60 * 60 * 1000) : null;
 
-    try {
-      const adminUser = await db.user.findFirst();
-      if (adminUser) {
-        await db.importHistory.create({
-          data: {
-            zipFileName: file.name,
-            userId: adminUser.id,
-            status: failed.length > 0 && created.length === 0 && updated.length === 0 ? "FAILED" : "SUCCESS",
-            summaryCreated: created.length,
-            summaryUpdated: updated.length,
-            summaryErrors: failed.length,
-            summarySkipped: rowIssues.length,
-            durationMs,
-            rollbackWindowExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
-          },
-        });
-      }
-    } catch (historyErr) {
-      console.error("Failed to write import history:", historyErr);
-    }
+    const history = await recordImportHistory({
+      zipFileName: file.name,
+      status,
+      summaryCreated: created.length,
+      summaryUpdated: updated.length,
+      summaryErrors: failed.length,
+      summarySkipped: rowIssues.length,
+      durationMs,
+      rollbackWindowExpiry,
+      snapshot: {
+        createdArticleNumbers: created,
+        updatedProducts: updatedSnapshots,
+      },
+    });
 
     return NextResponse.json({
       success: true,
+      importId: history?.id ?? null,
       fileName: file.name,
       summary: {
         created: created.length,
@@ -547,9 +556,53 @@ export async function POST(request: Request) {
       rowIssues,
       unmatchedImages,
       durationMs,
+      rollbackWindowExpiry,
     });
   } catch (err) {
     const error = err as Error;
     return NextResponse.json({ error: `Import failed: ${error.message}` }, { status: 500 });
+  }
+}
+
+async function resolveImportUserId(): Promise<string | null> {
+  const session = await getSession();
+  if (session?.id) {
+    const sessionUser = await db.user.findUnique({ where: { id: session.id } });
+    if (sessionUser) return sessionUser.id;
+  }
+  const firstUser = await db.user.findFirst();
+  return firstUser?.id ?? null;
+}
+
+async function recordImportHistory(data: {
+  zipFileName: string;
+  status: string;
+  summaryCreated: number;
+  summaryUpdated: number;
+  summaryErrors: number;
+  summarySkipped: number;
+  durationMs: number;
+  rollbackWindowExpiry: Date | null;
+  snapshot?: Prisma.InputJsonValue;
+}) {
+  try {
+    const userId = await resolveImportUserId();
+    return await db.importHistory.create({
+      data: {
+        zipFileName: data.zipFileName,
+        userId: userId ?? undefined,
+        status: data.status,
+        summaryCreated: data.summaryCreated,
+        summaryUpdated: data.summaryUpdated,
+        summaryErrors: data.summaryErrors,
+        summarySkipped: data.summarySkipped,
+        durationMs: data.durationMs,
+        rollbackWindowExpiry: data.rollbackWindowExpiry,
+        snapshot: data.snapshot,
+      },
+    });
+  } catch (historyErr) {
+    console.error("Failed to write import history:", historyErr);
+    return null;
   }
 }
