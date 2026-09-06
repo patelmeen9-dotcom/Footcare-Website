@@ -6,7 +6,7 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { serializeProductSnapshot, type ProductSnapshot } from "@/lib/import-snapshot";
-
+//import { serializeProductSnapshot, type ImportSnapshot } from "@/lib/import-snapshot";
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
