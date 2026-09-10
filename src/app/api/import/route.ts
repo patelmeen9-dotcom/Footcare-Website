@@ -36,14 +36,12 @@ interface ExcelRow {
 interface MatchedImage {
   filename: string;
   articleNumber: string;
-  color: string;
   imageIndex: number;
 }
 
 interface ColorGroup {
   colorName: string;
   sizes: Set<string>;
-  images: MatchedImage[];
 }
 
 interface ProductGroup {
@@ -60,6 +58,7 @@ interface ProductGroup {
   productCategory: string;
   subCategory: string;
   colors: Map<string, ColorGroup>;
+  images: MatchedImage[];
 }
 
 interface RowIssue {
@@ -114,20 +113,35 @@ function mapShowroom(store: string): string {
 
 // Parses an image filename like:
 //   30933601_PUMA Black-Pro Blue_01.png
-// into { articleNumber: "30933601", color: "PUMA Black-Pro Blue", imageIndex: 1 }
+// into { articleNumber: "30933601", imageIndex: 1 }
+// Only the segment before the FIRST underscore (article number) and the
+// segment after the LAST underscore (image index, for ordering) are used.
+// Everything in between — color text, etc. — is ignored for matching.
 function parseImageFilename(filename: string): MatchedImage | null {
-  const baseName = filename.replace(/\.[^/.]+$/, ""); // strip extension
-  const parts = baseName.split("_");
-  if (parts.length < 3) return null;
+  const baseName = filename.replace(/\.[^/.]+$/, "").trim();
 
-  const articleNumber = parts[0].trim();
-  const imageIndexRaw = parts[parts.length - 1].trim();
-  const color = parts.slice(1, parts.length - 1).join("_").trim();
+  // Article number = the leading run of digits (all your examples fit this).
+  const articleMatch = baseName.match(/^(\d+)/);
+  if (!articleMatch) return null;
+  const articleNumber = articleMatch[1];
 
-  const imageIndex = parseInt(imageIndexRaw, 10);
-  if (!articleNumber || !color || isNaN(imageIndex)) return null;
+  // Everything after the article, with a single leading separator stripped.
+  const remainder = baseName
+    .slice(articleNumber.length)
+    .replace(/^[_\-]/, "")
+    .trim();
 
-  return { filename, articleNumber, color, imageIndex };
+  // Figure out the image index, if any. It's the last "_"- or "-"-separated
+  // segment, and it only counts if it's purely digits.
+  let imageIndex = 0;
+  const lastSep = Math.max(remainder.lastIndexOf("_"), remainder.lastIndexOf("-"));
+  const tail = lastSep === -1 ? remainder : remainder.slice(lastSep + 1).trim();
+
+  if (tail !== "" && /^\d+$/.test(tail)) {
+    imageIndex = parseInt(tail, 10);
+  }
+
+  return { filename, articleNumber, imageIndex };
 }
 
 async function uploadToCloudinary(buffer: Buffer, folder: string, publicId: string): Promise<string> {
@@ -294,13 +308,14 @@ export async function POST(request: Request) {
           productCategory: String(row["PRODUCT CATEGORY"] ?? "").trim(),
           subCategory: String(row.CATEGORY ?? row["PRODUCT TYPE"] ?? "").trim(),
           colors: new Map(),
+          images: [],
         };
         productGroups.set(articleNumber, group);
       }
 
       let colorGroup = group.colors.get(normalizeForMatch(colorName));
       if (!colorGroup) {
-        colorGroup = { colorName, sizes: new Set(), images: [] };
+        colorGroup = { colorName, sizes: new Set() };
         group.colors.set(normalizeForMatch(colorName), colorGroup);
       }
 
@@ -334,13 +349,7 @@ export async function POST(request: Request) {
         continue;
       }
 
-      const colorGroup = group.colors.get(normalizeForMatch(parsed.color));
-      if (!colorGroup) {
-        unmatchedImages.push(filename);
-        continue;
-      }
-
-      colorGroup.images.push(parsed);
+      group.images.push(parsed);
     }
 
     // ---------- 5. Save to database ----------
@@ -467,7 +476,24 @@ export async function POST(request: Request) {
           created.push(group.articleNumber);
         }
 
-        // ---------- Colors, sizes, images for this product ----------
+        // ---------- Images for this product (matched by ARTICLE only) ----------
+        // Upload each article-matched image to Cloudinary exactly ONCE per
+        // article, regardless of how many colors this product has. The
+        // resulting URLs are then attached to every color below, since
+        // matching no longer distinguishes by color.
+        const articleImages: { url: string; imageIndex: number }[] = [];
+        for (const img of [...group.images].sort((a, b) => a.imageIndex - b.imageIndex)) {
+          const entryKey = imageFileEntries.find((p) => (p.split("/").pop() || p) === img.filename);
+          if (!entryKey) continue;
+
+          const imageBuffer = await zip.files[entryKey].async("nodebuffer");
+          const publicId = `${group.articleNumber}_${img.imageIndex}`;
+
+          const cloudinaryUrl = await uploadToCloudinary(imageBuffer, "footcare/products", publicId);
+          articleImages.push({ url: cloudinaryUrl, imageIndex: img.imageIndex });
+        }
+
+        // ---------- Colors, sizes, images (per color) ----------
         let colorDisplayOrder = 0;
         for (const colorGroup of group.colors.values()) {
           const colorObj = await db.productColor.create({
@@ -490,22 +516,14 @@ export async function POST(request: Request) {
             }
           }
 
-          // Upload each matched image to Cloudinary and save its URL
+          // Attach the same article-level image set to this color.
           let imageDisplayOrder = 0;
-          for (const img of colorGroup.images.sort((a, b) => a.imageIndex - b.imageIndex)) {
-            const entryKey = imageFileEntries.find((p) => (p.split("/").pop() || p) === img.filename);
-            if (!entryKey) continue;
-
-            const imageBuffer = await zip.files[entryKey].async("nodebuffer");
-            const publicId = `${group.articleNumber}_${slugify(colorGroup.colorName)}_${img.imageIndex}`;
-
-            const cloudinaryUrl = await uploadToCloudinary(imageBuffer, "footcare/products", publicId);
-
+          for (const img of articleImages) {
             await db.productImage.create({
               data: {
                 productId,
                 colorId: colorObj.id,
-                url: cloudinaryUrl,
+                url: img.url,
                 altText: `${group.name} - ${colorGroup.colorName}`,
                 displayOrder: imageDisplayOrder++,
               },

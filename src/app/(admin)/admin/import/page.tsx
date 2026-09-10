@@ -242,11 +242,10 @@ export default function AdminImportPage() {
           {/* Validation Result / Status block */}
           {statusMessage && (
             <div
-              className={`p-space-4 rounded-button border text-caption flex flex-col gap-2 ${
-                successReport
+              className={`p-space-4 rounded-button border text-caption flex flex-col gap-2 ${successReport
                   ? "bg-emerald-50 text-emerald-800 border-emerald-200"
                   : "bg-red-50 text-red-800 border-red-200"
-              }`}
+                }`}
             >
               <div className="flex items-center gap-2 font-bold">
                 {successReport ? <CheckCircle2 className="h-5 w-5 shrink-0" /> : <AlertCircle className="h-5 w-5 shrink-0" />}
@@ -291,7 +290,7 @@ export default function AdminImportPage() {
                         <span className="text-caption font-bold text-foreground leading-tight">{prod.name}</span>
                         <span className="font-mono text-label-small text-foreground/45">Art: {prod.articleNumber} • {prod.brand}</span>
                         <span className="text-[10px] text-foreground/60">Price: ₹{prod.finalPrice} • Discount: {prod.discount}%</span>
-                        
+
                         {/* Matched thumbnails slider */}
                         {prod.images && prod.images.length > 1 && (
                           <div className="flex gap-1.5 mt-2 overflow-x-auto py-1">
@@ -345,47 +344,46 @@ export default function AdminImportPage() {
               </p>
             ) : (
               history.map((log, index) => (
-              <div key={log.id ?? `log-${index}`} className="border-b border-border pb-4 last:border-b-0 last:pb-0 flex flex-col gap-2">
-                <div className="flex items-center justify-between text-caption">
-                  <span className="font-bold text-foreground/80 truncate max-w-[150px]">{log.fileName}</span>
-                  <span className="text-[10px] text-foreground/40 font-mono">{log.date}</span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex gap-2 text-[10px] text-foreground/50">
-                    <span>C: {log.created}</span>
-                    <span>U: {log.updated}</span>
-                    {log.errors > 0 && <span className="text-red-600 font-bold">E: {log.errors}</span>}
+                <div key={log.id ?? `log-${index}`} className="border-b border-border pb-4 last:border-b-0 last:pb-0 flex flex-col gap-2">
+                  <div className="flex items-center justify-between text-caption">
+                    <span className="font-bold text-foreground/80 truncate max-w-[150px]">{log.fileName}</span>
+                    <span className="text-[10px] text-foreground/40 font-mono">{log.date}</span>
                   </div>
 
-                  {log.canRollback ? (
-                    <button
-                      onClick={() => handleRollback(log.id)}
-                      disabled={rollingBackId === log.id}
-                      className="flex items-center gap-1 text-[10px] text-red-600 font-semibold hover:underline disabled:opacity-50"
-                    >
-                      {rollingBackId === log.id ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <RotateCcw className="h-3 w-3" />
-                      )}
-                      Undo
-                    </button>
-                  ) : (
-                    <span
-                      className={`text-[10px] font-bold uppercase ${
-                        log.status === "ROLLED_BACK"
-                          ? "text-orange-600"
-                          : log.status === "SUCCESS"
-                            ? "text-emerald-700"
-                            : "text-red-600"
-                      }`}
-                    >
-                      {log.status}
-                    </span>
-                  )}
+                  <div className="flex items-center justify-between">
+                    <div className="flex gap-2 text-[10px] text-foreground/50">
+                      <span>C: {log.created}</span>
+                      <span>U: {log.updated}</span>
+                      {log.errors > 0 && <span className="text-red-600 font-bold">E: {log.errors}</span>}
+                    </div>
+
+                    {log.canRollback ? (
+                      <button
+                        onClick={() => handleRollback(log.id)}
+                        disabled={rollingBackId === log.id}
+                        className="flex items-center gap-1 text-[10px] text-red-600 font-semibold hover:underline disabled:opacity-50"
+                      >
+                        {rollingBackId === log.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <RotateCcw className="h-3 w-3" />
+                        )}
+                        Undo
+                      </button>
+                    ) : (
+                      <span
+                        className={`text-[10px] font-bold uppercase ${log.status === "ROLLED_BACK"
+                            ? "text-orange-600"
+                            : log.status === "SUCCESS"
+                              ? "text-emerald-700"
+                              : "text-red-600"
+                          }`}
+                      >
+                        {log.status}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
               ))
             )}
           </div>
