@@ -111,36 +111,40 @@ function mapShowroom(store: string): string {
   return SHOWROOM_NAMES.STORE; // Default fallback only if STORE column is blank/unrecognized
 }
 
-// Parses an image filename like:
-//   30933601_PUMA Black-Pro Blue_01.png
-// into { articleNumber: "30933601", imageIndex: 1 }
-// Only the segment before the FIRST underscore (article number) and the
-// segment after the LAST underscore (image index, for ordering) are used.
-// Everything in between — color text, etc. — is ignored for matching.
+// Parses image filenames of the form:
+//   <ARTICLE>--<INDEX>.<ext>     or     <ARTICLE>__<INDEX>.<ext>
+//
+// Both double-hyphen and double-underscore are accepted as the separator
+// between the article number and the image index, so all of these work:
+//
+//   40641903--01.png          → { article: "40641903",    index: 1 }
+//   40641903--02.png          → { article: "40641903",    index: 2 }
+//   896328ID-MVE--01.png      → { article: "896328ID-MVE", index: 1 }
+//   AA0547-700--03.png        → { article: "AA0547-700",  index: 3 }
+//   40641903__01.png          → { article: "40641903",    index: 1 }
+//   896328ID-MVE__02.png      → { article: "896328ID-MVE", index: 2 }
+//
+// Rules:
+//   - Split on the LAST occurrence of "--" or "__" (whichever is later).
+//     Single dashes/underscores inside the article are preserved untouched.
+//   - The article is kept EXACTLY as-is from the filename. Case-insensitive
+//     matching against the Excel PRODUCT ARTICLE is done by the caller via
+//     a lowercased index, so "896328id-mve" and "896328ID-MVE" match.
+//   - The right side must be all digits; anything else → unmatched.
 function parseImageFilename(filename: string): MatchedImage | null {
   const baseName = filename.replace(/\.[^/.]+$/, "").trim();
 
-  // Article number = the leading run of digits (all your examples fit this).
-  const articleMatch = baseName.match(/^(\d+)/);
-  if (!articleMatch) return null;
-  const articleNumber = articleMatch[1];
+  const dashIdx = baseName.lastIndexOf("--");
+  const underscoreIdx = baseName.lastIndexOf("__");
+  const sepIdx = Math.max(dashIdx, underscoreIdx);
+  if (sepIdx === -1) return null;
 
-  // Everything after the article, with a single leading separator stripped.
-  const remainder = baseName
-    .slice(articleNumber.length)
-    .replace(/^[_\-]/, "")
-    .trim();
+  const articleNumber = baseName.slice(0, sepIdx).trim();
+  const imageIndexRaw = baseName.slice(sepIdx + 2).trim();
 
-  // Figure out the image index, if any. It's the last "_"- or "-"-separated
-  // segment, and it only counts if it's purely digits.
-  let imageIndex = 0;
-  const lastSep = Math.max(remainder.lastIndexOf("_"), remainder.lastIndexOf("-"));
-  const tail = lastSep === -1 ? remainder : remainder.slice(lastSep + 1).trim();
+  if (!articleNumber || !/^\d+$/.test(imageIndexRaw)) return null;
 
-  if (tail !== "" && /^\d+$/.test(tail)) {
-    imageIndex = parseInt(tail, 10);
-  }
-
+  const imageIndex = parseInt(imageIndexRaw, 10);
   return { filename, articleNumber, imageIndex };
 }
 
@@ -326,6 +330,13 @@ export async function POST(request: Request) {
       }
     }
 
+    // Lowercase index so image filenames can match the Excel article in any
+    // case (e.g. "896328id-mve--01.png" matches "896328ID-MVE" in the sheet).
+    const productGroupsByLowerArticle = new Map<string, ProductGroup>();
+    for (const [article, group] of productGroups) {
+      productGroupsByLowerArticle.set(article.toLowerCase(), group);
+    }
+
     // ---------- 4. Match images in ZIP to product + color ----------
     const imageFileEntries = Object.keys(zip.files).filter((name) => {
       const entry = zip.files[name];
@@ -343,7 +354,7 @@ export async function POST(request: Request) {
         continue;
       }
 
-      const group = productGroups.get(parsed.articleNumber);
+      const group = productGroupsByLowerArticle.get(parsed.articleNumber.toLowerCase());
       if (!group) {
         unmatchedImages.push(filename);
         continue;
@@ -481,13 +492,22 @@ export async function POST(request: Request) {
         // article, regardless of how many colors this product has. The
         // resulting URLs are then attached to every color below, since
         // matching no longer distinguishes by color.
+        //
+        // Public IDs are derived from the ORIGINAL filename (sanitized) so
+        // two different images of the same article (e.g. 12965--01.png and
+        // 12965--02.png) can never overwrite each other on Cloudinary.
         const articleImages: { url: string; imageIndex: number }[] = [];
         for (const img of [...group.images].sort((a, b) => a.imageIndex - b.imageIndex)) {
           const entryKey = imageFileEntries.find((p) => (p.split("/").pop() || p) === img.filename);
           if (!entryKey) continue;
 
           const imageBuffer = await zip.files[entryKey].async("nodebuffer");
-          const publicId = `${group.articleNumber}_${img.imageIndex}`;
+
+          // Cloudinary disallows most punctuation in public_id, so anything
+          // outside [A-Za-z0-9_-] becomes an underscore.
+          const publicId = img.filename
+            .replace(/\.[^/.]+$/, "")
+            .replace(/[^a-zA-Z0-9_-]+/g, "_");
 
           const cloudinaryUrl = await uploadToCloudinary(imageBuffer, "footcare/products", publicId);
           articleImages.push({ url: cloudinaryUrl, imageIndex: img.imageIndex });
