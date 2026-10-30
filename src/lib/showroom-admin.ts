@@ -33,23 +33,28 @@ type ShowroomRecord = {
   closingTime: string;
   heroImage: string;
   description: string;
-  brandsManaged: boolean;
+  brandsManaged?: boolean;
   _count: { products: number };
-  products: { brandId: string; brand: { name: string } }[];
-  brandLinks: { brand: { id: string; name: string } }[];
+  products: { brandId: string; brand: { id?: string; name: string } }[];
 };
 
-export function serializeShowroom(s: ShowroomRecord) {
-  const managedBrands = s.brandLinks
-    .map((link) => ({ id: link.brand.id, name: link.brand.name }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+export function serializeShowroom(
+  s: ShowroomRecord,
+  managedBrands?: { id: string; name: string }[] | null
+) {
   const derivedBrands = [
     ...new Map(
-      s.products.map((p) => [p.brandId, { id: p.brandId, name: p.brand.name }])
+      s.products.map((p) => [
+        p.brand.id || p.brandId,
+        { id: p.brand.id || p.brandId, name: p.brand.name },
+      ])
     ).values(),
   ].sort((a, b) => a.name.localeCompare(b.name));
 
-  const brands = s.brandsManaged ? managedBrands : derivedBrands;
+  const brands =
+    s.brandsManaged && managedBrands !== undefined && managedBrands !== null
+      ? [...managedBrands].sort((a, b) => a.name.localeCompare(b.name))
+      : derivedBrands;
 
   return {
     id: s.id,
@@ -64,7 +69,7 @@ export function serializeShowroom(s: ShowroomRecord) {
     heroImage: s.heroImage,
     description: s.description,
     productCount: s._count.products,
-    brandsManaged: s.brandsManaged,
+    brandsManaged: Boolean(s.brandsManaged),
     brands: brands.map((b) => b.name),
     brandIds: brands.map((b) => b.id),
   };
@@ -82,11 +87,25 @@ export const showroomInclude = {
     where: { status: "ACTIVE", available: true },
     select: {
       brandId: true,
-      brand: { select: { name: true } },
+      brand: { select: { id: true, name: true } },
     },
-    distinct: ["brandId" as const],
-  },
-  brandLinks: {
-    include: { brand: { select: { id: true, name: true } } },
   },
 };
+
+export async function loadManagedBrandsByShowroom() {
+  try {
+    const rows = await db.showroomBrand.findMany({
+      include: { brand: { select: { id: true, name: true } } },
+    });
+    const map = new Map<string, { id: string; name: string }[]>();
+    for (const row of rows) {
+      const list = map.get(row.showroomId) ?? [];
+      list.push({ id: row.brand.id, name: row.brand.name });
+      map.set(row.showroomId, list);
+    }
+    return map;
+  } catch (err) {
+    console.error("Could not load showroom brand links:", err);
+    return null;
+  }
+}

@@ -37,9 +37,9 @@ export default function ShowroomsPage() {
     const fetchShowrooms = async () => {
       try {
         const res = await fetch("/api/showrooms");
-        if (res.ok) {
-          const data = await res.json();
-          setShowrooms(data.showrooms || []);
+        const data = await res.json();
+        if (Array.isArray(data.showrooms)) {
+          setShowrooms(data.showrooms);
         }
       } catch (err) {
         console.error("Failed to fetch showrooms:", err);

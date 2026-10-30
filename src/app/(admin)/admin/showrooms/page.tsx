@@ -53,7 +53,7 @@ export default function AdminShowroomsPage() {
       ]);
       const showroomData = await showroomRes.json();
       const brandData = await brandRes.json();
-      if (showroomRes.ok) setShowrooms(showroomData.showrooms || []);
+      if (Array.isArray(showroomData.showrooms)) setShowrooms(showroomData.showrooms);
       if (brandRes.ok) setBrands(brandData.brands || []);
     } catch (err) {
       console.error("Failed to load showrooms:", err);

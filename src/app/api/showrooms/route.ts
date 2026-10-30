@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { serializeShowroom, showroomInclude, slugify, uniqueShowroomSlug } from "@/lib/showroom-admin";
+import {
+  loadManagedBrandsByShowroom,
+  serializeShowroom,
+  showroomInclude,
+  slugify,
+  uniqueShowroomSlug,
+} from "@/lib/showroom-admin";
 
 export async function GET() {
   try {
@@ -8,13 +14,18 @@ export async function GET() {
       return NextResponse.json({ showrooms: [] });
     }
 
-    const showrooms = await db.showroom.findMany({
-      orderBy: { name: "asc" },
-      include: showroomInclude,
-    });
+    const [showrooms, managedBrands] = await Promise.all([
+      db.showroom.findMany({
+        orderBy: { name: "asc" },
+        include: showroomInclude,
+      }),
+      loadManagedBrandsByShowroom(),
+    ]);
 
     return NextResponse.json({
-      showrooms: showrooms.map(serializeShowroom),
+      showrooms: showrooms.map((showroom) =>
+        serializeShowroom(showroom, managedBrands?.get(showroom.id) ?? (managedBrands ? [] : null))
+      ),
     });
   } catch (err) {
     const error = err as Error;
@@ -82,7 +93,16 @@ export async function POST(request: Request) {
       include: showroomInclude,
     });
 
-    return NextResponse.json({ showroom: serializeShowroom(created) }, { status: 201 });
+    const managedBrands = await loadManagedBrandsByShowroom();
+    return NextResponse.json(
+      {
+        showroom: serializeShowroom(
+          created,
+          managedBrands?.get(created.id) ?? (managedBrands ? [] : null)
+        ),
+      },
+      { status: 201 }
+    );
   } catch (err) {
     const error = err as Error;
     return NextResponse.json({ error: error.message }, { status: 500 });

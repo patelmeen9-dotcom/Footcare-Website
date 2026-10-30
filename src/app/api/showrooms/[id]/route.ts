@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { serializeShowroom, slugify, uniqueShowroomSlug } from "@/lib/showroom-admin";
+import {
+  loadManagedBrandsByShowroom,
+  serializeShowroom,
+  showroomInclude,
+  slugify,
+  uniqueShowroomSlug,
+} from "@/lib/showroom-admin";
 
 export async function PATCH(
   request: Request,
@@ -80,24 +86,24 @@ export async function PATCH(
       }
     });
 
-    const updated = await db.showroom.findUnique({
-      where: { id },
-      include: {
-        _count: { select: { products: { where: { status: "ACTIVE", available: true } } } },
-        products: {
-          where: { status: "ACTIVE", available: true },
-          select: { brandId: true, brand: { select: { name: true } } },
-          distinct: ["brandId"],
-        },
-        brandLinks: { include: { brand: { select: { id: true, name: true } } } },
-      },
-    });
+    const [updated, managedBrands] = await Promise.all([
+      db.showroom.findUnique({
+        where: { id },
+        include: showroomInclude,
+      }),
+      loadManagedBrandsByShowroom(),
+    ]);
 
     if (!updated) {
       return NextResponse.json({ error: "Showroom not found." }, { status: 404 });
     }
 
-    return NextResponse.json({ showroom: serializeShowroom(updated) });
+    return NextResponse.json({
+      showroom: serializeShowroom(
+        updated,
+        managedBrands?.get(updated.id) ?? (managedBrands ? [] : null)
+      ),
+    });
   } catch (err) {
     const error = err as Error;
     return NextResponse.json({ error: error.message }, { status: 500 });
