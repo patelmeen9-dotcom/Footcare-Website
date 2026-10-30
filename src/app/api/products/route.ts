@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { canonicalizeBrandName, showroomNameForBrand } from "@/lib/catalog-mapping";
 
 export async function GET(request: Request) {
   try {
@@ -104,7 +105,7 @@ export async function GET(request: Request) {
             skip: offset,
             take: limit,
             include: {
-              brand: { select: { name: true, slug: true } },
+              brand: { select: { name: true, slug: true, logo: true } },
               category: { select: { name: true, slug: true } },
               showroom: { select: { name: true, slug: true } },
               images: { select: { url: true, altText: true }, orderBy: { displayOrder: "asc" } },
@@ -122,6 +123,7 @@ export async function GET(request: Request) {
               name: p.name,
               slug: p.slug,
               brand: p.brand.name,
+              brandLogo: p.brand.logo,
               category: p.category.name,
               showroom: p.showroom.name,
               mrp: Number(p.mrp),
@@ -167,7 +169,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { id, articleNumber, name, brand, category, showroom, mrp, discount, available, images } = body;
+    const { id, articleNumber, name, brand: rawBrand, category, mrp, discount, available, images } = body;
+    const brand = canonicalizeBrandName(String(rawBrand ?? ""));
 
     const finalPrice = Math.round(mrp * (1 - discount / 100));
     const slug = name.toLowerCase().replace(/\s+/g, "-");
@@ -197,23 +200,26 @@ export async function POST(request: Request) {
           });
         }
 
-        let showroomObj = await db.showroom.findFirst({ where: { name: { contains: showroom, mode: "insensitive" } } });
+        const assignedShowroom = showroomNameForBrand(brand);
+        let showroomObj = await db.showroom.findFirst({
+          where: { name: { equals: assignedShowroom, mode: "insensitive" } },
+        });
         if (!showroomObj) {
           showroomObj = await db.showroom.findFirst();
         }
         if (!showroomObj) {
           showroomObj = await db.showroom.create({
             data: {
-              name: showroom,
-              slug: showroom.toLowerCase(),
+              name: assignedShowroom,
+              slug: assignedShowroom.toLowerCase().replace(/\s+/g, "-"),
               address: "Jubilee Ground Road, Bhuj",
-              mapsUrl: `https://maps.google.com/?q=${encodeURIComponent(showroom + " Bhuj")}`,
+              mapsUrl: `https://maps.google.com/?q=${encodeURIComponent(assignedShowroom + " Bhuj")}`,
               phone: "+91 98252 12345",
               email: "info@footcare.com",
               openingTime: "09:30 AM",
               closingTime: "09:00 PM",
               heroImage: "linear-gradient(to right bottom, #0f172a, #1e293b)",
-              description: `${showroom}`,
+              description: assignedShowroom,
             },
           });
         }
@@ -224,7 +230,16 @@ export async function POST(request: Request) {
         if (existing) {
           await db.product.update({
             where: { id: existing.id },
-            data: { articleNumber, name, mrp, discount, finalPrice, available },
+            data: {
+              articleNumber,
+              name,
+              mrp,
+              discount,
+              finalPrice,
+              available,
+              brandId: brandObj.id,
+              showroomId: showroomObj.id,
+            },
           });
           await db.productImage.deleteMany({ where: { productId: existing.id } });
           await db.productColor.deleteMany({ where: { productId: existing.id } });

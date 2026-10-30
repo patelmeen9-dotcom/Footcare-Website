@@ -4,6 +4,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState, useEffect, Suspense } from "react";
 import PageContainer from "@/components/layout/page-container";
+import { BrandLogo } from "@/components/brand-logo";
 import { Search, MapPin, SlidersHorizontal, ArrowUpDown, RefreshCw, X, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface Product {
@@ -12,6 +13,7 @@ interface Product {
   name: string;
   slug: string;
   brand: string;
+  brandLogo?: string;
   category: string;
   showroom: string;
   mrp: number;
@@ -419,12 +421,12 @@ function ProductsContent() {
                       href={`/products/${prod.slug}`}
                       className="bg-card border border-border rounded-card overflow-hidden shadow-soft-sm hover:shadow-soft-md hover:translate-y-[-1px] transition-all group flex flex-col justify-between"
                     >
-                      <div className="relative h-56 w-full bg-slate-100 flex items-center justify-center text-slate-400 select-none overflow-hidden">
+                      <div className="relative aspect-[3/4] w-full bg-slate-100 flex items-center justify-center text-slate-400 select-none overflow-hidden">
                         {prod.coverImage || prod.image ? (
                           <img
                             src={prod.coverImage || prod.image}
                             alt={prod.name}
-                            className="object-cover w-full h-full group-hover:scale-[1.02] transition-transform duration-500"
+                            className="object-contain w-full h-full group-hover:scale-[1.02] transition-transform duration-500"
                           />
                         ) : (
                           <span className="text-caption font-medium uppercase tracking-widest text-foreground/30">
@@ -446,7 +448,10 @@ function ProductsContent() {
                       <div className="p-space-6 flex flex-col gap-space-3">
                         <div className="flex items-center justify-between text-label-small text-foreground/50 font-medium">
                           <span>{prod.category}</span>
-                          <span>{prod.brand}</span>
+                          <span className="flex items-center gap-1.5">
+                            <BrandLogo logo={prod.brandLogo} name={prod.brand} className="h-5 w-5 rounded-sm" />
+                            {prod.brand}
+                          </span>
                         </div>
                         <div>
                           <h3 className="text-body-large font-bold text-foreground truncate group-hover:text-primary transition-colors">

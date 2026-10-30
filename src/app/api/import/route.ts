@@ -6,14 +6,14 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { serializeProductSnapshot, type ProductSnapshot } from "@/lib/import-snapshot";
-//import { serializeProductSnapshot, type ImportSnapshot } from "@/lib/import-snapshot";
+import { canonicalizeBrandName, showroomNameForBrand, SHOWROOM_NAMES } from "@/lib/catalog-mapping";
+
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// One row of the Excel sheet, using the REAL column headers from FOOTCARE SITE.xlsx
 interface ExcelRow {
   STORE?: string;
   BRAND?: string;
@@ -69,23 +69,12 @@ interface RowIssue {
 const REQUIRED_COLUMNS = [
   "STORE",
   "BRAND",
-  "PRODUCT NAME",
   "PRODUCT ARTICLE",
-  "PRODUCT CATEGORY",
-  "COLOR",
-  "MRP",
+  "PRODUCT NAME",
 ];
 
-// The exact showroom names as they exist (or should exist) in the database.
-// STORE column values from Excel are mapped to one of these three via mapShowroom().
-const SHOWROOM_NAMES = {
-  KICK_SPORTS: "Footcare Kick Sports",
-  MALL: "Foot Care Mall",
-  STORE: "Foot Care Store",
-} as const;
+const DEFAULT_CATEGORY = "General";
 
-// Normalizes text used for matching (article numbers, color names) so that
-// "PUMA Black-Pro Blue" and "puma black-pro blue " are treated as the same thing.
 function normalizeForMatch(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -98,54 +87,44 @@ function slugify(value: string): string {
     .replace(/(^-|-$)/g, "");
 }
 
-// Maps the Excel STORE column value (e.g. "kickSports", "store", "Mall")
-// to the real showroom name. Checks the most distinctive word first so
-// none of the three can accidentally match each other.
-function mapShowroom(store: string): string {
-  const s = store.toLowerCase().trim();
-
-  if (s.includes("mall")) return SHOWROOM_NAMES.MALL;
-  if (s.includes("kick") || s.includes("sport")) return SHOWROOM_NAMES.KICK_SPORTS;
-  if (s.includes("store")) return SHOWROOM_NAMES.STORE;
-
-  return SHOWROOM_NAMES.STORE; // Default fallback only if STORE column is blank/unrecognized
-}
-
-// Parses image filenames of the form:
-//   <ARTICLE>--<INDEX>.<ext>     or     <ARTICLE>__<INDEX>.<ext>
+// Matches a filename against the set of known article numbers from the
+// Excel. Picks the LONGEST known article that the filename starts with,
+// so IM4006-200 wins over IM4006 if both exist. Works with any of:
 //
-// Both double-hyphen and double-underscore are accepted as the separator
-// between the article number and the image index, so all of these work:
-//
-//   40641903--01.png          → { article: "40641903",    index: 1 }
-//   40641903--02.png          → { article: "40641903",    index: 2 }
-//   896328ID-MVE--01.png      → { article: "896328ID-MVE", index: 1 }
-//   AA0547-700--03.png        → { article: "AA0547-700",  index: 3 }
-//   40641903__01.png          → { article: "40641903",    index: 1 }
-//   896328ID-MVE__02.png      → { article: "896328ID-MVE", index: 2 }
-//
-// Rules:
-//   - Split on the LAST occurrence of "--" or "__" (whichever is later).
-//     Single dashes/underscores inside the article are preserved untouched.
-//   - The article is kept EXACTLY as-is from the filename. Case-insensitive
-//     matching against the Excel PRODUCT ARTICLE is done by the caller via
-//     a lowercased index, so "896328id-mve" and "896328ID-MVE" match.
-//   - The right side must be all digits; anything else → unmatched.
-function parseImageFilename(filename: string): MatchedImage | null {
+//   IM4006-200.png
+//   IM4006-200-1.png
+//   IM4006-200 (2).png
+//   IM4006-200__01.png
+//   IM4006-200--01.png
+//   IM4006-200-Black.png
+//   12965-NVPK.png
+//   896328ID-MVE-2.png
+//   AA0547-700.jpg
+function parseImageFilename(
+  filename: string,
+  knownArticlesSorted: string[]
+): MatchedImage | null {
   const baseName = filename.replace(/\.[^/.]+$/, "").trim();
+  if (!baseName) return null;
 
-  const dashIdx = baseName.lastIndexOf("--");
-  const underscoreIdx = baseName.lastIndexOf("__");
-  const sepIdx = Math.max(dashIdx, underscoreIdx);
-  if (sepIdx === -1) return null;
+  const lowerBase = baseName.toLowerCase();
 
-  const articleNumber = baseName.slice(0, sepIdx).trim();
-  const imageIndexRaw = baseName.slice(sepIdx + 2).trim();
+  for (const article of knownArticlesSorted) {
+    if (!lowerBase.startsWith(article)) continue;
 
-  if (!articleNumber || !/^\d+$/.test(imageIndexRaw)) return null;
+    const nextChar = lowerBase.charAt(article.length);
+    if (nextChar !== "" && /[a-z0-9]/.test(nextChar)) continue;
 
-  const imageIndex = parseInt(imageIndexRaw, 10);
-  return { filename, articleNumber, imageIndex };
+    const remainder = baseName.slice(article.length);
+    const digitRuns = remainder.match(/\d+/g);
+    const imageIndex = digitRuns
+      ? parseInt(digitRuns[digitRuns.length - 1], 10)
+      : 0;
+
+    return { filename, articleNumber: article, imageIndex };
+  }
+
+  return null;
 }
 
 async function uploadToCloudinary(buffer: Buffer, folder: string, publicId: string): Promise<string> {
@@ -162,10 +141,6 @@ async function uploadToCloudinary(buffer: Buffer, folder: string, publicId: stri
   });
 }
 
-// Real showroom details, used ONLY if a showroom needs to be auto-created
-// because it doesn't already exist in the database. These match the real
-// addresses/hours/descriptions from MOCK_SHOWROOMS so a fresh database
-// gets accurate showroom info instead of placeholder text.
 const SHOWROOM_DEFAULTS: Record<
   string,
   {
@@ -286,30 +261,59 @@ export async function POST(request: Request) {
     for (const row of rows) {
       const articleNumber = String(row["PRODUCT ARTICLE"] ?? "").trim();
       const name = String(row["PRODUCT NAME"] ?? "").trim();
+      const brand = canonicalizeBrandName(String(row.BRAND ?? "").trim());
       const colorName = String(row.COLOR ?? "").trim();
 
-      if (!articleNumber || !name || !colorName) {
+      const productCategoryRaw = String(row["PRODUCT CATEGORY"] ?? "").trim();
+      const categoryName = productCategoryRaw || DEFAULT_CATEGORY;
+
+      const missingFields: string[] = [];
+      if (!articleNumber) missingFields.push("PRODUCT ARTICLE");
+      if (!name) missingFields.push("PRODUCT NAME");
+      if (!brand) missingFields.push("BRAND");
+
+      if (missingFields.length > 0) {
         rowIssues.push({
           articleNumber: articleNumber || "(blank)",
-          message: "Row skipped: missing PRODUCT ARTICLE, PRODUCT NAME, or COLOR.",
+          message: `Row skipped: missing ${missingFields.join(", ")}.`,
         });
         continue;
       }
+
+      const mrpRaw = row.MRP;
+      const mrpString = String(mrpRaw ?? "").trim();
+      if (mrpString === "") {
+        rowIssues.push({
+          articleNumber,
+          message: "Row skipped: MRP is blank.",
+        });
+        continue;
+      }
+      const mrpValue = parseFloat(mrpString.replace(/,/g, ""));
+      if (isNaN(mrpValue)) {
+        rowIssues.push({
+          articleNumber,
+          message: `Row skipped: MRP "${mrpString}" is not a number.`,
+        });
+        continue;
+      }
+
+      const discountValue = parseFloat(String(row.DISCOUNT ?? "").replace(/%/g, "")) || 0;
 
       let group = productGroups.get(articleNumber);
       if (!group) {
         group = {
           articleNumber,
           name,
-          brand: String(row.BRAND ?? "Unknown").trim(),
-          category: String(row["PRODUCT CATEGORY"] ?? "General").trim(),
-          showroom: mapShowroom(String(row.STORE ?? "")),
+          brand,
+          category: categoryName,
+          showroom: showroomNameForBrand(brand),
           gender: String(row.GENDER ?? "").trim(),
           productType: String(row["PRODUCT TYPE"] ?? "").trim(),
-          mrp: parseFloat(String(row.MRP).replace(/,/g, "")) || 0,
-          discount: parseFloat(String(row.DISCOUNT).replace(/%/g, "")) || 0,
+          mrp: mrpValue,
+          discount: discountValue,
           division: String(row.DIVISION ?? "").trim(),
-          productCategory: String(row["PRODUCT CATEGORY"] ?? "").trim(),
+          productCategory: categoryName,
           subCategory: String(row.CATEGORY ?? row["PRODUCT TYPE"] ?? "").trim(),
           colors: new Map(),
           images: [],
@@ -323,38 +327,41 @@ export async function POST(request: Request) {
         group.colors.set(normalizeForMatch(colorName), colorGroup);
       }
 
-      // Sizes can be numeric (shoes: 7, 8, 9) or text (apparel: S, M, L, XL)
       const sizeUk = row["SIZE UK"];
-      if (sizeUk !== undefined && sizeUk !== "") {
+      if (sizeUk !== undefined && sizeUk !== null && String(sizeUk).trim() !== "") {
         colorGroup.sizes.add(String(sizeUk).trim());
       }
     }
 
-    // Lowercase index so image filenames can match the Excel article in any
-    // case (e.g. "896328id-mve--01.png" matches "896328ID-MVE" in the sheet).
     const productGroupsByLowerArticle = new Map<string, ProductGroup>();
     for (const [article, group] of productGroups) {
       productGroupsByLowerArticle.set(article.toLowerCase(), group);
     }
 
-    // ---------- 4. Match images in ZIP to product + color ----------
+    // ---------- 4. Match images in ZIP to product ----------
     const imageFileEntries = Object.keys(zip.files).filter((name) => {
       const entry = zip.files[name];
       return !entry.dir && /\.(png|jpe?g|webp)$/i.test(name);
     });
 
+    // Longest-first list of lowercased article numbers so the parser can
+    // pick the most specific match.
+    const knownArticlesSorted = Array.from(productGroups.keys())
+      .map((a) => a.toLowerCase())
+      .sort((a, b) => b.length - a.length);
+
     const unmatchedImages: string[] = [];
 
     for (const entryPath of imageFileEntries) {
       const filename = entryPath.split("/").pop() || entryPath;
-      const parsed = parseImageFilename(filename);
+      const parsed = parseImageFilename(filename, knownArticlesSorted);
 
       if (!parsed) {
         unmatchedImages.push(filename);
         continue;
       }
 
-      const group = productGroupsByLowerArticle.get(parsed.articleNumber.toLowerCase());
+      const group = productGroupsByLowerArticle.get(parsed.articleNumber);
       if (!group) {
         unmatchedImages.push(filename);
         continue;
@@ -371,7 +378,6 @@ export async function POST(request: Request) {
 
     for (const group of productGroups.values()) {
       try {
-        // Find or create Brand
         let brandObj = await db.brand.findFirst({
           where: { name: { equals: group.brand, mode: "insensitive" } },
         });
@@ -387,7 +393,6 @@ export async function POST(request: Request) {
           });
         }
 
-        // Find or create Category
         let categoryObj = await db.category.findFirst({
           where: { name: { equals: group.category, mode: "insensitive" } },
         });
@@ -401,10 +406,6 @@ export async function POST(request: Request) {
           });
         }
 
-        // Find or create Showroom - match by EXACT name only. We never fall
-        // back to "just grab any showroom", because that was the bug that
-        // caused every product to land in the same showroom regardless of
-        // its real STORE value.
         let showroomObj = await db.showroom.findFirst({
           where: { name: { equals: group.showroom, mode: "insensitive" } },
         });
@@ -458,7 +459,6 @@ export async function POST(request: Request) {
           });
           productId = existingProduct.id;
 
-          // Wipe old colors/sizes/images for this product so the re-import is clean
           await db.productImage.deleteMany({ where: { productId } });
           await db.productSize.deleteMany({ where: { productId } });
           await db.productColor.deleteMany({ where: { productId } });
@@ -487,15 +487,7 @@ export async function POST(request: Request) {
           created.push(group.articleNumber);
         }
 
-        // ---------- Images for this product (matched by ARTICLE only) ----------
-        // Upload each article-matched image to Cloudinary exactly ONCE per
-        // article, regardless of how many colors this product has. The
-        // resulting URLs are then attached to every color below, since
-        // matching no longer distinguishes by color.
-        //
-        // Public IDs are derived from the ORIGINAL filename (sanitized) so
-        // two different images of the same article (e.g. 12965--01.png and
-        // 12965--02.png) can never overwrite each other on Cloudinary.
+        // ---------- Images ----------
         const articleImages: { url: string; imageIndex: number }[] = [];
         for (const img of [...group.images].sort((a, b) => a.imageIndex - b.imageIndex)) {
           const entryKey = imageFileEntries.find((p) => (p.split("/").pop() || p) === img.filename);
@@ -503,8 +495,8 @@ export async function POST(request: Request) {
 
           const imageBuffer = await zip.files[entryKey].async("nodebuffer");
 
-          // Cloudinary disallows most punctuation in public_id, so anything
-          // outside [A-Za-z0-9_-] becomes an underscore.
+          // public_id derived from the sanitized filename so two different
+          // files for the same article never collide.
           const publicId = img.filename
             .replace(/\.[^/.]+$/, "")
             .replace(/[^a-zA-Z0-9_-]+/g, "_");
@@ -524,9 +516,6 @@ export async function POST(request: Request) {
             },
           });
 
-          // Sizes belong to the whole product in the current schema, so we
-          // add every distinct size seen across all colors of this product,
-          // skipping any size already added by a previous color in this loop.
           for (const size of colorGroup.sizes) {
             const existingSize = await db.productSize.findFirst({
               where: { productId, value: size },
@@ -536,7 +525,6 @@ export async function POST(request: Request) {
             }
           }
 
-          // Attach the same article-level image set to this color.
           let imageDisplayOrder = 0;
           for (const img of articleImages) {
             await db.productImage.create({
@@ -544,7 +532,7 @@ export async function POST(request: Request) {
                 productId,
                 colorId: colorObj.id,
                 url: img.url,
-                altText: `${group.name} - ${colorGroup.colorName}`,
+                altText: `${group.name}${colorGroup.colorName ? " - " + colorGroup.colorName : ""}`,
                 displayOrder: imageDisplayOrder++,
               },
             });

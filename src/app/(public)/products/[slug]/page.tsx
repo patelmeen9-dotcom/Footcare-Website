@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import PageContainer from "@/components/layout/page-container";
+import { BrandLogo } from "@/components/brand-logo";
 import { MapPin, Phone, ChevronLeft } from "lucide-react";
 import Link from "next/link";
 
@@ -11,6 +12,7 @@ interface RelatedProduct {
   name: string;
   slug: string;
   brand: string;
+  brandLogo?: string;
   category: string;
   finalPrice: number;
   image: string;
@@ -52,7 +54,7 @@ interface ProductDetails {
   finalPrice: number;
   available: boolean;
   hotSelling: boolean;
-  brand: { name: string; slug: string };
+  brand: { name: string; slug: string; logo?: string };
   category: { name: string; slug: string };
   showroom: Showroom;
   colors: ProductColor[];
@@ -168,12 +170,12 @@ export default function ProductDetailsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-space-12 items-start">
           {/* 1. Swipeable Product Gallery */}
           <div className="flex flex-col gap-space-4">
-            <div className="relative aspect-square w-full bg-slate-100 rounded-card overflow-hidden shadow-soft-sm flex items-center justify-center text-slate-400 select-none border border-border">
+            <div className="relative aspect-[3/4] w-full bg-slate-100 rounded-card overflow-hidden shadow-soft-sm flex items-center justify-center text-slate-400 select-none border border-border">
               {activeImage ? (
                 <img
                   src={activeImage.url}
                   alt={activeImage.altText || product.name}
-                  className="object-cover w-full h-full animate-fade-in"
+                  className="object-contain w-full h-full animate-fade-in"
                 />
               ) : (
                 <span className="text-caption uppercase tracking-widest text-foreground/30">No Image Available</span>
@@ -199,11 +201,11 @@ export default function ProductDetailsPage() {
                   <button
                     key={img.id}
                     onClick={() => setActiveImageIndex(idx)}
-                    className={`h-16 w-16 rounded-button overflow-hidden border-2 shrink-0 bg-slate-50 transition-all ${
+                    className={`aspect-[3/4] w-16 rounded-button overflow-hidden border-2 shrink-0 bg-slate-50 transition-all ${
                       idx === activeImageIndex ? "border-primary scale-[1.03]" : "border-border"
                     }`}
                   >
-                    <img src={img.url} alt="thumbnail" className="object-cover w-full h-full" />
+                    <img src={img.url} alt="thumbnail" className="object-contain w-full h-full" />
                   </button>
                 ))}
               </div>
@@ -214,7 +216,12 @@ export default function ProductDetailsPage() {
           <div className="flex flex-col gap-space-6">
             {/* Header info */}
             <div className="flex flex-col gap-space-1">
-              <span className="text-label-small font-bold text-primary uppercase tracking-wider">
+              <span className="text-label-small font-bold text-primary uppercase tracking-wider flex items-center gap-2">
+                <BrandLogo
+                  logo={product.brand.logo}
+                  name={product.brand.name}
+                  className="h-8 w-8 rounded-button border border-border"
+                />
                 {product.brand.name} • {product.category.name}
               </span>
               <h1 className="text-page-title md:text-[2.25rem] font-bold tracking-tight text-foreground leading-tight">
@@ -368,15 +375,18 @@ export default function ProductDetailsPage() {
                   href={`/products/${p.slug}`}
                   className="bg-card border border-border rounded-card overflow-hidden shadow-soft-sm hover:shadow-soft-md transition-all group flex flex-col justify-between"
                 >
-                  <div className="relative h-44 w-full bg-slate-100 flex items-center justify-center text-slate-400 select-none overflow-hidden">
+                  <div className="relative aspect-[3/4] w-full bg-slate-100 flex items-center justify-center text-slate-400 select-none overflow-hidden">
                     {p.coverImage || p.image ? (
-                      <img src={p.coverImage || p.image} alt={p.name} className="object-cover w-full h-full" />
+                      <img src={p.coverImage || p.image} alt={p.name} className="object-contain w-full h-full" />
                     ) : (
                       <span className="text-caption font-medium uppercase tracking-widest text-foreground/30">{p.brand} Image</span>
                     )}
                   </div>
                   <div className="p-space-4 flex flex-col gap-space-2">
-                    <span className="text-label-small text-foreground/40 font-medium uppercase">{p.brand}</span>
+                    <span className="text-label-small text-foreground/40 font-medium uppercase flex items-center gap-1.5">
+                      <BrandLogo logo={p.brandLogo} name={p.brand} className="h-5 w-5 rounded-sm" />
+                      {p.brand}
+                    </span>
                     <h3 className="text-caption font-bold text-foreground truncate group-hover:text-primary transition-colors">
                       {p.name}
                     </h3>

@@ -14,6 +14,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import PageContainer from "@/components/layout/page-container";
+import { BrandLogo } from "@/components/brand-logo";
 
 interface Brand {
   id: string;
@@ -270,11 +271,13 @@ export default function Home() {
               <Link
                 key={brand.id}
                 href={`/products?brand=${encodeURIComponent(brand.name)}`}
-                className="flex flex-col justify-between p-space-6 bg-card border border-border rounded-card hover:border-accent hover:shadow-soft-md transition-all group h-40"
+                className="flex flex-col justify-between p-space-6 bg-card border border-border rounded-card hover:border-accent hover:shadow-soft-md transition-all group h-44"
               >
-                <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center font-bold tracking-tighter text-body text-primary group-hover:bg-accent group-hover:text-accent-foreground transition-colors">
-                  {brand.logo?.substring(0, 2) || brand.name.substring(0, 2)}
-                </div>
+                <BrandLogo
+                  logo={brand.logo}
+                  name={brand.name}
+                  className="w-full h-16 rounded-button bg-slate-50"
+                />
                 <div>
                   <h3 className="text-body font-bold text-foreground">{brand.name}</h3>
                   <span className="text-label-small text-foreground/40 font-medium">
@@ -319,13 +322,13 @@ export default function Home() {
                 href={`/products/${prod.slug}`}
                 className="bg-card border border-border rounded-card overflow-hidden shadow-soft-sm hover:shadow-soft-md transition-all group flex flex-col justify-between"
               >
-                <div className="relative h-60 w-full bg-slate-100 flex items-center justify-center text-slate-400 select-none overflow-hidden">
+                <div className="relative aspect-[3/4] w-full bg-slate-100 flex items-center justify-center text-slate-400 select-none overflow-hidden">
                   {prod.image ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={prod.image}
                       alt={prod.name}
-                      className="object-cover w-full h-full group-hover:scale-[1.02] transition-transform duration-500"
+                      className="object-contain w-full h-full group-hover:scale-[1.02] transition-transform duration-500"
                     />
                   ) : (
                     <span className="text-caption font-medium uppercase tracking-widest">
@@ -345,7 +348,10 @@ export default function Home() {
                 <div className="p-space-6 flex flex-col gap-space-3">
                   <div className="flex items-center justify-between text-label-small text-foreground/50 font-medium">
                     <span>{prod.category}</span>
-                    <span>{prod.brand}</span>
+                    <span className="flex items-center gap-1.5">
+                      <BrandLogo logo={prod.brandLogo} name={prod.brand} className="h-5 w-5 rounded-sm" />
+                      {prod.brand}
+                    </span>
                   </div>
                   <div>
                     <h3 className="text-body-large font-bold text-foreground group-hover:text-accent transition-colors truncate">

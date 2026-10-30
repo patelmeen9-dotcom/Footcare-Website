@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import PageContainer from "@/components/layout/page-container";
+import { BrandLogo } from "@/components/brand-logo";
 import { ArrowRight } from "lucide-react";
 
 interface Brand {
@@ -70,20 +71,20 @@ export default function BrandsPage() {
                 key={brand.id}
                 className="bg-card border border-border rounded-card overflow-hidden shadow-soft-sm hover:shadow-soft-md transition-all flex flex-col justify-between group"
               >
-                {/* Banner with gradient */}
-                <div
-                  className="h-48 w-full flex items-center justify-center text-white font-bold select-none relative"
-                  style={{ background: brand.banner || "linear-gradient(135deg,#1e3c72,#2a5298)" }}
-                >
-                  <div className="absolute inset-0 bg-black/10 group-hover:bg-black/0 transition-colors" />
-                  <h2 className="text-[3rem] font-extrabold tracking-tighter uppercase relative z-10">
-                    {brand.name}
-                  </h2>
+                <div className="h-48 w-full flex items-center justify-center bg-slate-100 border-b border-border p-space-6">
+                  <BrandLogo
+                    logo={brand.logo}
+                    name={brand.name}
+                    className="w-full h-full bg-transparent"
+                  />
                 </div>
 
                 {/* Info */}
                 <div className="p-space-6 flex flex-col gap-space-4 flex-grow justify-between">
                   <div className="flex flex-col gap-space-2">
+                    <h2 className="text-body-large font-bold text-foreground tracking-tight">
+                      {brand.name}
+                    </h2>
                     <span className="text-label-small font-semibold text-accent uppercase">
                       {brand.productCount} Items Available
                     </span>

@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { LayoutDashboard, ShoppingBag, Percent, FileDown, LogOut, Loader2, Menu, X } from "lucide-react";
+import { LayoutDashboard, ShoppingBag, Percent, FileDown, Tags, MapPin, LogOut, Loader2, Menu, X } from "lucide-react";
 
 export default function AdminLayout({
   children,
@@ -57,6 +57,8 @@ export default function AdminLayout({
   const navItems = [
     { name: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
     { name: "Products CRUD", href: "/admin/products", icon: ShoppingBag },
+    { name: "Brands", href: "/admin/brands", icon: Tags },
+    { name: "Showrooms", href: "/admin/showrooms", icon: MapPin },
     { name: "Promotions", href: "/admin/promotions", icon: Percent },
     { name: "Inventory Import", href: "/admin/import", icon: FileDown },
   ];
